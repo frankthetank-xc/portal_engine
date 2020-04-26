@@ -16,6 +16,7 @@
 #include "common.h"
 #include "world.h"
 #include "input.h"
+#include "util.h"
 
 /* ***********************************
  * Private Defines
@@ -54,6 +55,9 @@ int main(int argc, char *argv[])
 
     if(argc < 2)
     {
+        xy_t a1 = {0, 0}, a2 = {10, 10}, b1 = {0, 10}, b2 = {10, 0};
+        printf("Intersection: %i", lines_intersect(&a1, &a2, &b1, &b2));
+
         printf("Please specify a level to play\n");
         return -1;
     }
@@ -94,6 +98,12 @@ int main(int argc, char *argv[])
         {
             done = 1;
             continue;
+        }
+
+        if(keys->e)
+        {
+            input_toggle_mouselook();
+            keys->e = 0;
         }
         
         world_move_player(keys);

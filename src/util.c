@@ -62,6 +62,8 @@ static void get_slope_intercept(float x0, float y0, float x1, float y1,
     // Get the offset
     *b = y0 - ((*m) * x0);
 
+    //printf("Slope Intercept: (%5.2f,%5.2f) (%5.2f,%5.2f) m = %5.2f b = %5.2f\n", x0,y0,x1,y1, *m, *b);
+
     return;
 }
 
@@ -115,61 +117,54 @@ int lines_intersect(xy_t *p0, xy_t *p1, xy_t *q0, xy_t *q1)
 }
 
 /**
- * Lower level lines_intersect that accepts raw coordinates
+ * Lower level lines_intersect that accepts raw coordinates.
  */
 int lines_intersect_raw(float p0x, float p0y, float p1x, float p1y,
                         float q0x, float q0y, float q1x, float q1y )
 {
-    // Vars for y = mx + b
-    float pm, pb, qm, qb;
-    int pvert, qvert;
-    // Intersection points
-    xy_t r;
+    float t, u, denom;
 
-    pvert = (FEQ(p0x, p1x)) ? 1 : 0;
-    qvert = (FEQ(q0x, q1x)) ? 1 : 0;
-    // Check for vertical lines
-    if(pvert && qvert)
+    denom = ((p0x - p1x) * (q0y - q1y)) - ((p0y - p1y) * (q0x - q1x));
+
+    if(FEQ(denom, 0.0))
     {
-        // Both vertical - just make sure they aren't the same
-        return (FEQ(p0x, q0x)) ? 1 : 0;
+        return 0;
     }
-    else if(pvert)
-    {
-        // P is vertical
-        get_slope_intercept(q0x, q0y, q1x, q1y, &qm, &qb);
 
-        // Get the point of intersection
-        r.x = p0x;
-        r.y = (qm * r.x) + qb;
-    }
-    else if(qvert)
-    {
-        // Q is vertical
-        get_slope_intercept(p0x, p0y, p1x, p1y, &pm, &pb);
+    t = ((p0x - q0x) * (q0y - q1y)) - ((p0y - q0y) * (q0x - q1x));
+    t /= denom;
+    t = fabs(t);
 
-        // Get the point of intersection
-        r.x = q0x;
-        r.y = (pm * r.x) + pb;
-    }
-    else
-    {
-        // No vertical lines, get both slopes and do it the dirty way
-        get_slope_intercept(q0x, q0y, q1x, q1y, &qm, &qb);
-        get_slope_intercept(p0x, p0y, p1x, p1y, &pm, &pb);
+    if(t < 0.0 || t > 1.0) return 0;
 
-        if(FEQ(qm, pm))
-        {
-            // Lines are parallel, return false
-            return 0;
-        }
+    u = ((p0x - p1x) * (p0y - q0y)) - ((p0y - p1y) * (p0x - q0x));
+    u /= denom;
+    u = fabs(u);
 
-        // Equation from wikipedia
-        r.x = (qb - pb) / (qm - pm);
-        r.y = (pm * r.x) + pb;
-    }
-    
-    // We have our point R. See if it is on both lines
-    return ( point_on_line_raw(r.x,r.y,q0x,q0y,q1x,q1y) 
-          && point_on_line_raw(r.x,r.y,p0x,p0y,p1x,p1y));
+    if(u < 0.0 || u > 1.0) return 0;
+
+    return 1;
+}
+
+/**
+ * Projects a vector A onto another vector B.
+ * 
+ * @note Relatively inefficient, but called rarely enough
+ * that there isn't much reason to optimize it
+ * 
+ * @param[in] ax x value of A
+ * @param[in] ay y value of A
+ * @param[in] bx x value of B
+ * @param[in] by y value of B
+ * @param[out] x Projected x value
+ * @param[out] y Projected y value
+ */
+void project_vector(float ax, float ay, float bx, float by, float *x, float *y)
+{
+    float b_theta = atan2(by,bx);
+    float ab_theta = atan2(ay,ax) - b_theta;
+    float magnitude = sqrtf((ax*ax) + sqrt(ay*ay)) * cosf(ab_theta);
+
+    if(x) *x = magnitude * cosf(b_theta);
+    if(y) *y = magnitude * sinf(b_theta);
 }

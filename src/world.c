@@ -52,6 +52,7 @@ static world_t _world;
 
 void world_delete_sector(sector_t *sector);
 void world_handle_keys(keys_t *keys);
+int inside_sector(xy_t *p, sector_t *sect);
 
 void print_debug(void);
 
@@ -120,6 +121,38 @@ void world_handle_keys(keys_t *keys)
     player->yaw = CLAMP(player->yaw + y*MOUSE_Y_SCALE, -5, 5);
 }
 
+/**
+ * Algorithm to test if a point is inside a sector. 
+ * Draw a line west from the point. If it intersects an odd number
+ * of edges, it is inside the sector. If it intersects an even number
+ * of edges, it is outside the sector.
+ * 
+ * Based on how the Build engine checks if a point is within a sector.
+ * 
+ * @param[in] x The x coordinate
+ * @param[in] y The y coordinate
+ * @param[in] sect The sector
+ */
+int inside_sector(xy_t *p, sector_t *sect)
+{
+    float dx, x;
+    uint16_t count = 0;
+    for(int i = 0; i < sect->num_vert; ++i)
+    {
+        // Get the vertices for this edge
+        xy_t *v0 = &_world.vertices[sect->vertices[i]], *v1 = &_world.vertices[sect->vertices[i+1]];
+
+        // Check that vertices contain the right y position
+        if(p->y > MAX(v0->y,v1->y) || p->y < MIN(v0->y,v1->y)) continue;
+        // Get the x position at this y position
+        dx = (v1->x - v0->x) / (v1->y - v0->y);
+        x  = (v0->x) + (dx * (p->y - v0->y));
+
+        if(x < p->x) ++count;
+    }
+
+    return (count & 0x1) ? 1 : 0;
+}
 
 void print_debug(void)
 {
@@ -300,6 +333,8 @@ void world_move_player(keys_t *keys)
             sect = &_world.sectors[_world.player.sector];
             done = 1;
 
+            //if(!inside_sector(&ppos,sect)) printf("Player not inside sector?\n");
+
             // Collision detection
             for(uint16_t s = 0; s < sect->num_vert; ++s)
             {
@@ -309,10 +344,13 @@ void world_move_player(keys_t *keys)
 
                 xy_t *v0 = &_world.vertices[sect->vertices[s+0]];
                 xy_t *v1 = &_world.vertices[sect->vertices[s+1]];
+                dest.x = px+dx; dest.y = py+dy;
 
                 // Check if player is about to cross an edge
-                if(IntersectBox(px,py, px+dx, py+dy, v0->x, v0->y, v1->x, v1->y)
-                    && PointSide(px+dx, py+dy, v0->x, v0->y, v1->x, v1->y) < 0)
+                //if(IntersectBox(px,py, px+dx, py+dy, v0->x, v0->y, v1->x, v1->y)
+                //    && PointSide(px+dx, py+dy, v0->x, v0->y, v1->x, v1->y) < 0)
+                if(lines_intersect(&ppos, &dest, v0, v1)
+                  && (!inside_sector(&dest, sect)))
                 {
                     float hole_low  = neighbor < 0 ?  9e9 : MAX(sect->floor, nsect->floor);
                     float hole_high = neighbor < 0 ? -9e9 : MIN(sect->ceil,  nsect->ceil);
@@ -320,10 +358,11 @@ void world_move_player(keys_t *keys)
                     if((hole_high < (player->pos.z + player->height + player->headmargin))
                     || (hole_low > player->pos.z + player->kneemargin))
                     {
-                        // Player can't fit, slide along wall
-                        float xd = v1->x - v0->x, yd = v1->y - v0->y;
-                        dx = xd * (dx*xd + yd+dy) / (xd*xd + yd*yd);
-                        dy = yd * (dx*xd + yd*dy) / (xd*xd + yd*yd);
+                        // Player can't fit, project their vector along the wall
+                        // TODO this isn't super efficient (that sqrt call
+                        // is particularly nasty), but it's called
+                        // rarely enough that it doesn't really matter....
+                        project_vector(dx,dy, (v1->x - v0->x), (v1->y - v0->y), &dx, &dy);
                     }
                     else
                     {

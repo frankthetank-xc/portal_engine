@@ -37,4 +37,6 @@ int lines_intersect(xy_t *p0, xy_t *p1, xy_t *q0, xy_t *q2);
 int lines_intersect_raw(float p0x, float p0y, float p1x, float p1y,
                         float q0x, float q0y, float q1x, float q1y );
 
+void project_vector(float ax, float ay, float bx, float by, float *x, float *y);
+
 #endif /*__UTIL_H__*/

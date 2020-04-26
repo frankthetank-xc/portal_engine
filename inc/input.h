@@ -21,6 +21,7 @@ typedef struct keys_struct
     uint8_t a;
     uint8_t s;
     uint8_t d;
+    uint8_t e;
     uint8_t right;
     uint8_t left;
     uint8_t down;
@@ -35,6 +36,8 @@ typedef struct keys_struct
 
 void input_init();
 void input_update(void);
+void input_set_mouselook(int enable);
+void input_toggle_mouselook(void);
 keys_t *input_get(void);
 void mouse_get_input(int *x, int *y);
 

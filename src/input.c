@@ -47,8 +47,7 @@ void input_init()
 {
     memset(&_keys, 0, sizeof(_keys));
 
-    SDL_ShowCursor(SDL_DISABLE);
-    SDL_SetRelativeMouseMode(SDL_ENABLE);
+    input_set_mouselook(1);
 }
 
 /**
@@ -70,6 +69,7 @@ void input_update(void)
                     case 'a': _keys.a = (event.type == SDL_KEYDOWN); break;
                     case 's': _keys.s = (event.type == SDL_KEYDOWN); break;
                     case 'd': _keys.d = (event.type == SDL_KEYDOWN); break;
+                    case 'e': _keys.e = (event.type == SDL_KEYDOWN); break;
                     case SDLK_RIGHT: _keys.right = (event.type == SDL_KEYDOWN); break;
                     case SDLK_LEFT: _keys.left = (event.type == SDL_KEYDOWN); break;
                     case SDLK_UP: _keys.up = (event.type == SDL_KEYDOWN); break;
@@ -87,6 +87,25 @@ void input_update(void)
     }
 }
 
+void input_set_mouselook(int enable)
+{
+    if(enable)
+    {
+        SDL_ShowCursor(SDL_DISABLE);
+        SDL_SetRelativeMouseMode(SDL_ENABLE);
+    }
+    else
+    {
+        SDL_ShowCursor(SDL_ENABLE);
+        SDL_SetRelativeMouseMode(SDL_DISABLE);
+    }
+}
+
+void input_toggle_mouselook(void)
+{
+    input_set_mouselook(SDL_GetRelativeMouseMode() == SDL_ENABLE ? 0 : 1);
+}
+
 /**
  * Return a handle to the keys_t struct holding key info
  */
@@ -97,5 +116,12 @@ keys_t *input_get(void)
 
 void mouse_get_input(int *x, int *y)
 {
-    SDL_GetRelativeMouseState(x, y);
+    if(SDL_GetRelativeMouseMode() == SDL_DISABLE) 
+    {
+        *x = 0; *y = 0;
+    }
+    else 
+    {
+        SDL_GetRelativeMouseState(x, y);
+    }
 }

@@ -395,7 +395,7 @@ int8_t render_draw_world(void)
             int beginx = MAX(x1, now.sx1), endx = MIN(x2, now.sx2);
             for(int x = beginx; x <= endx; ++x)
             {
-                // Calc Z coordinate
+                // Calc Z coordinate (only used for lighting)
                 int z = ((x - x1) * (t2.z - t1.z) / (x2-x1) + t1.z) * 7;
                 // Get Y coords for ceiling & floor (clamped)
                 int ya = (x-x1) * (y2a-y1a) / (x2-x1) + y1a, cya = CLAMP(ya, ytop[x], ybottom[x]);
@@ -416,7 +416,7 @@ int8_t render_draw_world(void)
                     int nya = (x-x1) * (ny2a-ny1a) / (x2-x1) + ny1a, cnya = CLAMP(nya, ytop[x], ybottom[x]);
                     int nyb = (x-x1) * (ny2b-ny1b) / (x2-x1) + ny1b, cnyb = CLAMP(nyb, ytop[x], ybottom[x]);
                     // If our ceiling is higher than theirs, render upper wall
-                    uint32_t r1 = 0x010101 * (255-z), r2 = 0x040007 * (31-z/8);
+                    uint32_t r1 = 0x010101 * (255-MIN(z,255)), r2 = 0x040007 * (31-MIN(z/8,255/8));
                     // Draw between our and their ceiling
                     if(nyceil < yceil) 
                     {
