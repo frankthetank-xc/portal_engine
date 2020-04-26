@@ -1,4 +1,4 @@
 **/*.o
-./test
+test
 ex
 .vscode
