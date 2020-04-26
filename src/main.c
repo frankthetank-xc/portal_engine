@@ -1,5 +1,8 @@
 /**
- * Playground program to test SDL features
+ * Playground program to mess around with 3D SDL rendering
+ * 
+ * 
+ * Initial code is heavily based on Bisqwit's 3D renderer application
  */
 
 // Global headers
@@ -51,7 +54,8 @@ int main(int argc, char *argv[])
 
     if(argc < 2)
     {
-        filename = "testworld.txt";
+        printf("Please specify a level to play\n");
+        return -1;
     }
     else
     {

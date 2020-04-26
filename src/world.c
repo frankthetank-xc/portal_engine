@@ -137,7 +137,7 @@ void print_debug(void)
 /**
  * FORMAT OF INPUT FILE
  * 
- * VECTORS:
+ * VERTICES:
  * v [id] [x] [y]
  * 
  * SECTORS:
@@ -168,6 +168,19 @@ int8_t world_load(const char *filename)
     _world.numSectors = 0;
     _world.sectors = NULL;
     _world.vertices = NULL;
+
+    // Set default values for player
+    _world.player.pos.x = 0;
+    _world.player.pos.y = 0;
+    _world.player.sector = 0;
+    _world.player.yaw           = 0;
+    _world.player.direction     = 0;
+    _world.player.headmargin    = PLAYER_HEAD_MARGIN;
+    _world.player.height        = PLAYER_HEIGHT;
+    _world.player.kneemargin    = PLAYER_KNEE_MARGIN;
+    _world.player.velocity.x = 0;
+    _world.player.velocity.y = 0;
+    _world.player.velocity.z = 0;
 
     // Read the file
     while(fgets(buf, sizeof(buf), fp))
@@ -230,20 +243,14 @@ int8_t world_load(const char *filename)
             case 'p':
                 // Read in: x y sector
                 sscanf(ptr, "%f %f %i", &_world.player.pos.x, &_world.player.pos.y, &_world.player.sector);
-                _world.player.pos.z = _world.sectors[_world.player.sector].floor;
-                _world.player.yaw           = 0;
-                _world.player.direction     = 0;
-                _world.player.headmargin    = PLAYER_HEAD_MARGIN;
-                _world.player.height        = PLAYER_HEIGHT;
-                _world.player.kneemargin    = PLAYER_KNEE_MARGIN;
-                _world.player.velocity.x = 0;
-                _world.player.velocity.y = 0;
-                _world.player.velocity.z = 0;
                 break;
             default:
                 break;
         }
     }
+
+    // Set player height
+    _world.player.pos.z = _world.sectors[_world.player.sector].floor;
 
     fclose(fp);
 }
