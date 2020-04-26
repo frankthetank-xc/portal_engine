@@ -1,0 +1,14 @@
+# Vertices
+v 0 0  0
+v 1 10  0
+v 2 20 0
+v 3 20 20
+v 4 0  20
+v 5 15 -20
+
+# Sectors
+s 0 0 15 5   0 1 2 3 4    x 1 x x x
+s 1 1.5 15 3   1 5 2        x x 0
+
+# Player
+p 5 5 0
