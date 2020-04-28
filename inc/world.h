@@ -12,6 +12,13 @@
  * Public Definitions
  * ***********************************/
 
+/** Max number of sectors */
+#define MAX_SECTORS (1024)
+
+/* ***********************************
+ * Public Typedefs
+ * ***********************************/
+
 typedef struct sector_struct
 {
     float floor, ceil;
@@ -40,10 +47,6 @@ typedef struct world_struct
 
     player_t player;
 } world_t;
-
-/* ***********************************
- * Public Typedefs
- * ***********************************/
 
 /* ***********************************
  * Public Functions

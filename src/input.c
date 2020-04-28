@@ -93,6 +93,7 @@ void input_update(void)
 
 void input_set_mouselook(int enable)
 {
+    int x,y;
     if(enable)
     {
         SDL_ShowCursor(SDL_DISABLE);
@@ -102,6 +103,8 @@ void input_set_mouselook(int enable)
     {
         SDL_ShowCursor(SDL_ENABLE);
         SDL_SetRelativeMouseMode(SDL_DISABLE);
+        // Get mouse state to clear out buffer
+        SDL_GetRelativeMouseState(&x,&y);
     }
 }
 
