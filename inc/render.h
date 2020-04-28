@@ -56,6 +56,8 @@ int8_t render_draw_vline(uint32_t x, uint32_t y0, uint32_t y1, uint32_t color);
 // Draw a point on the screen
 int8_t render_draw_point(uint32_t x, uint32_t y, uint32_t color);
 
+void toggle_debug(void);
+
 // Draw the game world
 int8_t render_draw_world(void);
 

@@ -63,6 +63,8 @@ static SDL_Renderer *_renderer;
 /** Global render settings */
 static render_settings_t _rsettings;
 
+static int debugging = 0;
+
 /* ***********************************
  * Static function prototypes
  * ***********************************/
@@ -293,6 +295,14 @@ int8_t render_draw_point(uint32_t x, uint32_t y, uint32_t color)
 }
 
 /**
+ * 
+ */
+void toggle_debug(void)
+{
+    debugging = (debugging) ? 0 : 1;
+}
+
+/**
  * Draw the game world
  */
 int8_t render_draw_world(void)
@@ -304,8 +314,10 @@ int8_t render_draw_world(void)
     // Initialize render queue
     r_queue_t rqueue[MAX_PORTALS], *rhead=rqueue, *rtail=rqueue;
     // Initialize drawing bounds
-    int ytop[SCR_W]={0}, ybottom[SCR_W], rendered_sects[numSectors];
+    int ytop[SCR_W]={0}, ybottom[SCR_W], *rendered_sects;
     uint32_t i;
+
+    rendered_sects = malloc(sizeof(int) * numSectors);
 
     for(i = 0; i < SCR_W; ++i) ybottom[i] = SCR_H - 1;
     for(i = 0; i < numSectors; ++i) rendered_sects[i] = 0;
@@ -349,12 +361,12 @@ int8_t render_draw_world(void)
             t1.x = v1.x * psin - v1.y * pcos;   t1.z = v1.x * pcos + v1.y * psin;
             t2.x = v2.x * psin - v2.y * pcos;   t2.z = v2.x * pcos + v2.y * psin;
             // Check if the wall is visible at all
-            if(t1.z <= 0 && t2.z <= 0) continue;
+            if(t1.z <= -1e-4f && t2.z <= -1e-4f) continue;
 
             // If wall is partially obscured, clip it against player's view
             if(t1.z <= 0 || t2.z <= 0)
             {
-                float nearz = 1e-4f, farz = 5, nearside = 1e-5f, farside = 20.f;
+                float nearz = 1e-4f, farz = 5, nearside = 1e-6f, farside = 20.f;
                 // Find intersection b/t wall and approximate edge of vision
                 xy_t i1 = Intersect(t1.x, t1.z, t2.x, t2.z, -nearside, nearz, -farside, farz);
                 xy_t i2 = Intersect(t1.x, t1.z, t2.x, t2.z, nearside, nearz, farside, farz);
@@ -453,13 +465,19 @@ int8_t render_draw_world(void)
                 rhead->sectorN = neighbor; rhead->sx1 = beginx; rhead->sx2 = endx;
                 if(++rhead == rqueue+MAX_PORTALS) rhead = rqueue;
             }
-            //SDL_RenderPresent(_renderer);
-            //SDL_Delay(10);
+
         } // End of sector loop
+        if(debugging)
+        {
+            SDL_RenderPresent(_renderer);
+            SDL_Delay(200);
+        }
         ++rendered_sects[now.sectorN];
     } while (rhead != rtail);
     
-
+    debugging = 0;
     // Draw final screen
     render_draw_screen();
+
+    free(rendered_sects);
 }

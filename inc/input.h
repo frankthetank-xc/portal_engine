@@ -22,12 +22,15 @@ typedef struct keys_struct
     uint8_t s;
     uint8_t d;
     uint8_t e;
+    uint8_t f;
+    uint8_t c;
     uint8_t right;
     uint8_t left;
     uint8_t down;
     uint8_t up;
     uint8_t space;
     uint8_t q;
+    uint8_t shift;
 } keys_t;
 
 /* ***********************************

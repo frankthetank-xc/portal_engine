@@ -70,10 +70,14 @@ void input_update(void)
                     case 's': _keys.s = (event.type == SDL_KEYDOWN); break;
                     case 'd': _keys.d = (event.type == SDL_KEYDOWN); break;
                     case 'e': _keys.e = (event.type == SDL_KEYDOWN); break;
+                    case 'f': _keys.f = (event.type == SDL_KEYDOWN); break;
+                    case 'c': _keys.c = (event.type == SDL_KEYDOWN); break;
                     case SDLK_RIGHT: _keys.right = (event.type == SDL_KEYDOWN); break;
                     case SDLK_LEFT: _keys.left = (event.type == SDL_KEYDOWN); break;
                     case SDLK_UP: _keys.up = (event.type == SDL_KEYDOWN); break;
                     case SDLK_DOWN: _keys.down = (event.type == SDL_KEYDOWN); break;
+                    case SDLK_RSHIFT:
+                    case SDLK_LSHIFT: _keys.shift = (event.type == SDL_KEYDOWN); break;
                     case ' ': _keys.space = (event.type == SDL_KEYDOWN); break;
                     case 'q': _keys.q = (event.type == SDL_KEYDOWN); break;
                     default: break;

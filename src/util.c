@@ -133,13 +133,11 @@ int lines_intersect_raw(float p0x, float p0y, float p1x, float p1y,
 
     t = ((p0x - q0x) * (q0y - q1y)) - ((p0y - q0y) * (q0x - q1x));
     t /= denom;
-    t = fabs(t);
 
     if(t < 0.0 || t > 1.0) return 0;
 
-    u = ((p0x - p1x) * (p0y - q0y)) - ((p0y - p1y) * (p0x - q0x));
+    u = -(((p0x - p1x) * (p0y - q0y)) - ((p0y - p1y) * (p0x - q0x)));
     u /= denom;
-    u = fabs(u);
 
     if(u < 0.0 || u > 1.0) return 0;
 
@@ -163,7 +161,7 @@ void project_vector(float ax, float ay, float bx, float by, float *x, float *y)
 {
     float b_theta = atan2(by,bx);
     float ab_theta = atan2(ay,ax) - b_theta;
-    float magnitude = sqrtf((ax*ax) + sqrt(ay*ay)) * cosf(ab_theta);
+    float magnitude = sqrtf((ax*ax) + (ay*ay)) * cosf(ab_theta);
 
     if(x) *x = magnitude * cosf(b_theta);
     if(y) *y = magnitude * sinf(b_theta);

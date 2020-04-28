@@ -105,6 +105,11 @@ int main(int argc, char *argv[])
             input_toggle_mouselook();
             keys->e = 0;
         }
+        if(keys->f)
+        {
+            toggle_debug();
+            keys->f = 0;
+        }
         
         world_move_player(keys);
 

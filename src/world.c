@@ -26,12 +26,15 @@
 #define BUFLEN 256
 
 #define PLAYER_HEIGHT 6
+#define PLAYER_CROUCH_HEIGHT 2.5
 #define PLAYER_HEAD_MARGIN 1
 #define PLAYER_KNEE_MARGIN 2
 
 #define PLAYER_MOVE_VEL 0.2
 #define PLAYER_BACK_VEL 0.1
 #define PLAYER_JUMP_VEL 1.2
+
+#define WALK_MULT (0.5)
 
 #define MOUSE_X_SCALE (0.01f)
 #define MOUSE_Y_SCALE (0.03f)
@@ -109,6 +112,29 @@ void world_handle_keys(keys_t *keys)
         {
             player->velocity.z = 1.2;
         }
+    }
+
+    // Handle crouching
+    if(keys->c)
+    {
+        if(player->height > PLAYER_CROUCH_HEIGHT)
+        {
+            player->height = MAX(player->height - 0.5, PLAYER_CROUCH_HEIGHT);
+        }
+    }
+    else
+    {
+        if(player->height < PLAYER_HEIGHT)
+        {
+            sector_t *sect = &_world.sectors[player->sector];
+            player->height = MIN(player->height + 0.5, MIN(PLAYER_HEIGHT, sect->ceil - (player->pos.z + player->headmargin)) );
+        }
+    }
+    
+    if(player->height < PLAYER_HEIGHT || keys->shift)
+    {
+        player->velocity.x *= WALK_MULT;
+        player->velocity.y *= WALK_MULT;
     }
 
     //if(keys->down) { player->yaw += 0.1; }
@@ -315,7 +341,7 @@ void world_move_player(keys_t *keys)
 {
     player_t *player = &_world.player;
     float px = player->pos.x, py = player->pos.y;
-    int done;
+    int done, newsector = 0;;
     // Construct vector for player movement
     float dx = player->velocity.x, dy = player->velocity.y;
     xy_t dest = {px+dx, py+dy};
@@ -368,13 +394,26 @@ void world_move_player(keys_t *keys)
                     {
                         // Player can fit - update active sector
                         player->sector = neighbor;
-                        //printf("New sector %i\n", neighbor);
+                        newsector = 1;
                         done = 0;
                     }
                 }
 
             }
         } while (!done);
+
+        sect = &_world.sectors[_world.player.sector];
+
+        if(!newsector)
+        {
+            // Check position one last time. If the player is
+            // about to escape a sector into space, cancel the move
+            dest.x = px+dx; dest.y = py+dy;
+            if(!inside_sector(&dest, sect))
+            {
+                dx = 0; dy = 0;
+            }
+        }
 
         // Now move the player
         player->pos.x += dx;
