@@ -14,6 +14,11 @@ OBJ   = $(patsubst %,$(ODIR)/%,$(_OBJ))
 
 LIBS=`sdl2-config --cflags --libs` -lSDL2_image -lm
 
+DEBUG ?= 0
+ifeq ($(DEBUG), 1)
+    CFLAGS += -g
+endif
+
 $(ODIR)/%.o: %.c $(DEPS)
 	$(CC) -o $@ -c $< $(CFLAGS) $(LIBS)
 
