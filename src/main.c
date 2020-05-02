@@ -45,19 +45,16 @@
  * ***********************************/
 int main(int argc, char *argv[])
 {
-    image_t sprite;
     int done = 0, moving;
     world_t *world;
     player_t *player;
     double pi = acos(-1);
     keys_t *keys;
     char *filename;
+    int fullscreen = 0;
 
     if(argc < 2)
     {
-        xy_t a1 = {0, 0}, a2 = {10, 10}, b1 = {0, 10}, b2 = {10, 0};
-        printf("Intersection: %i", lines_intersect(&a1, &a2, &b1, &b2));
-
         printf("Please specify a level to play\n");
         return -1;
     }
@@ -65,7 +62,6 @@ int main(int argc, char *argv[])
     {
         filename = argv[1];
     }
-    
 
     if(render_init() != 0)
     {
@@ -75,20 +71,15 @@ int main(int argc, char *argv[])
     input_init();
 
     printf("Loading level %s\n", filename);
-    world_load(filename);
+    if(world_load(filename) != 0)
+    {
+        printf("Could not load world %s\n", filename);
+        render_close();
+        return -1;
+    }
 
     world = world_get_world();
     player = &world->player;
-
-    // Print player sector position
-    //printf("Player sector %i: ", player->sector);
-    //sector_t *sect = &world->sectors[player->sector];
-    //for(int i = 0; i < sect->num_vert; ++i)
-    //{
-    //    xy_t *vert = &world->vertices[sect->vertices[i]];
-    //    printf("%4.2f %4.2f ", vert->x, vert->y);
-    //}
-    //printf("\n");
 
     while(done == 0)
     {
@@ -107,7 +98,10 @@ int main(int argc, char *argv[])
         }
         if(keys->f)
         {
-            toggle_debug();
+            //toggle_debug();
+            // Toggle fullscreen mode
+            fullscreen = (fullscreen) ? 0 : 1;
+            render_set_fullscreen(fullscreen);
             keys->f = 0;
         }
         
@@ -116,8 +110,7 @@ int main(int argc, char *argv[])
         /** Update the screen */
         render_draw_world();
     }
-
-    SDL_DestroyTexture(sprite.img);
+    printf("Exiting...\n");
 
     render_close();
 

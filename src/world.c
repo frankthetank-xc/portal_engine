@@ -209,6 +209,7 @@ void print_debug(void)
 
 /**
  * Load specified input file
+ * @return 0 on success
  */
 int8_t world_load(const char *filename)
 {
@@ -312,6 +313,8 @@ int8_t world_load(const char *filename)
     _world.player.pos.z = _world.sectors[_world.player.sector].floor;
 
     fclose(fp);
+
+    return 0;
 }
 
 /**

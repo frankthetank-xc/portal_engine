@@ -73,6 +73,9 @@ struct r_wall_struct
     xyz_t t0, t1;
     // Screen X positions (x0 is start, x1 is end)
     int x0, x1;
+    // Texture start & end
+    image_t *texture;
+    int u0, u1;
 
     int32_t neighbor;
     // Pointers to other objects in the queue for
@@ -95,6 +98,14 @@ static render_settings_t _rsettings;
 
 /** Flag for if we should debug a frame */
 static int debugging = 0;
+
+static const char *_texture_names[NUM_TEXTURES] = 
+{
+    "resource/brick.bmp",
+    "resource/dirt.bmp"
+};
+
+static image_t _textures[NUM_TEXTURES];
 
 // Variables for keeping track of 
 static uint8_t  sectors_visited[MAX_SECTORS];
@@ -168,7 +179,10 @@ r_wall_t *render_PreProcess(world_t *world)
             xy_t *v1 = &world->vertices[sect->vertices[i+1]];
             xyz_t *t0, *t1;
             float xscale0, xscale1;
-            int x0, x1;
+            // TODO TODO configurable textures
+            image_t *texture = &_textures[0];
+            float texture_scale = texture->xscale;
+            int x0, x1, u0, u1;
 
             // Get pointer to the next active wall object
             wall = &wall_pool[wcount];
@@ -193,16 +207,33 @@ r_wall_t *render_PreProcess(world_t *world)
             // If wall is entirely behind player, it is not visible
             if(t0->z <= 0 && t1->z <= 0) continue;
 
+            // Set up texture mapping variables
+            u0 = 0;
+            u1 = LineMagnitude(((v1->x - v0->x) / texture_scale), ((v1->y - v0->y) / texture_scale)) * texture->w;
+
             // The wall is partially behind the player, so we have to clip it against
             // the player's view frustrum
             if(t0->z <= 0 || t1->z <= 0)
             {
                 float nearz = 1e-4f, farz = 5, nearside = 1e-6f, farside = 20.f;
+                xy_t org0 = {t0->x, t0->z}, org1 = {t1->x, t1->z};
                 // Find an intersection between the wall and approximate edge of vision
                 xy_t i1 = Intersect(t0->x, t0->z, t1->x, t1->z, -nearside, nearz, -farside, farz);
                 xy_t i2 = Intersect(t0->x, t0->z, t1->x, t1->z,  nearside, nearz,  farside, farz);
                 if(t0->z < nearz) { if(i1.y > 0) { t0->x = i1.x; t0->z = i1.y; } else { t0->x = i2.x; t0->z = i2.y; } }
                 if(t1->z < nearz) { if(i1.y > 0) { t1->x = i1.x; t1->z = i1.y; } else { t1->x = i2.x; t1->z = i2.y; } }
+                // Adjust texture mapping values
+                if(fabs(t1->x - t0->x) > fabs(t1->z - t0->x))
+                {
+                    u0 = PointOnLine(org0.x, 0, org1.x, u1, t0->x);
+                    u1 = PointOnLine(org0.x, 0, org1.x, u1, t1->x);
+                }
+                else
+                {
+                    u0 = PointOnLine(org0.y, 0, org1.y, u1, t0->z);
+                    u1 = PointOnLine(org0.y, 0, org1.y, u1, t1->z);
+                }
+                
             }
 
             // Transform t0 and t1 onto screen X values
@@ -223,6 +254,10 @@ r_wall_t *render_PreProcess(world_t *world)
             wall->v0 = v0;  wall->v1 = v1;
             wall->x0 = x0;  wall->x1 = x1;
             wall->neighbor = sect->neighbors[i];
+            wall->u0 = u0;  wall->u1 = u1;
+            wall->texture = texture;
+            // TODO fix
+            //wall->u1 = texture->w - 1;
 
             if(wall->neighbor > -1 && sectors_visited[wall->neighbor] == 0)
             {
@@ -401,6 +436,8 @@ void render_DrawWall(r_wall_t *wall, world_t *world, int *ytop, int *ybottom)
     int x0, x1;
     int y0a, y1a, y0b, y1b, ny0a, ny1a, ny0b, ny1b;
     int beginx, endx;
+    int u0, u1;
+    image_t *texture;
 
     if(wall == NULL || world == NULL || ytop == NULL || ybottom == NULL) return;
 
@@ -409,6 +446,8 @@ void render_DrawWall(r_wall_t *wall, world_t *world, int *ytop, int *ybottom)
     neighbor = wall->neighbor;
     sect = wall->sector;
     player = &world->player;
+    u0 = wall->u0, u1 = wall->u1;
+    texture = wall->texture;
     // Set up y scaling
     yscale0 = _rsettings.vfov / t0->z;
     yscale1 = _rsettings.vfov / t1->z;
@@ -436,11 +475,14 @@ void render_DrawWall(r_wall_t *wall, world_t *world, int *ytop, int *ybottom)
     endx = MIN(x1, SCR_W);
     for(int x = beginx; x <= endx; ++x)
     {
+        // Calculate persective-corrected pixel index in wall texture
+        //    FROM wikipedia article on affine texture mapping
+        int texture_idx = (u0*((x1-x)*t1->z) + u1*((x-x0)*t0->z)) / ((x1-x)*t1->z + (x-x0)*t0->z);
         // Calc Z coordinate (only used for lighting)
-        int z = ((x - x0) * (t1->z - t0->z) / (x1-x0) + t0->z) * 7;
+        int z = ((x - x0) * (t1->z - t0->z) / (x1-x0) + t0->z) * 3;
         // Get Y for ceiling & floor, clamped to occlusion array
-        int ya = (x-x0) * (y1a - y0a) / (x1-x0) + y0a, cya = CLAMP(ya, ytop[x], ybottom[x]);
-        int yb = (x-x0) * (y1b - y0b) / (x1-x0) + y0b, cyb = CLAMP(yb, ytop[x], ybottom[x]);
+        int ya = PointOnLine(x0, y0a, x1, y1a, x), cya = CLAMP(ya, ytop[x], ybottom[x]);
+        int yb = PointOnLine(x0, y0b, x1, y1b, x), cyb = CLAMP(yb, ytop[x], ybottom[x]);
         // Check if occlusion array shows we're done with this x coord
         if(ybottom[x] - ytop[x] < 2) continue;
         // Draw the ceiling
@@ -454,16 +496,17 @@ void render_DrawWall(r_wall_t *wall, world_t *world, int *ytop, int *ybottom)
         if(neighbor >= 0)
         {
             // Draw *their* floor and ceiling
-            int nya = (x-x0) * (ny1a-ny0a) / (x1-x0) + ny0a, cnya = CLAMP(nya, ytop[x], ybottom[x]);
-            int nyb = (x-x0) * (ny1b-ny0b) / (x1-x0) + ny0b, cnyb = CLAMP(nyb, ytop[x], ybottom[x]);
+            int nya = PointOnLine(x0, ny0a, x1, ny1a, x), cnya = CLAMP(nya, ytop[x], ybottom[x]);
+            int nyb = PointOnLine(x0, ny0b, x1, ny1b, x), cnyb = CLAMP(nyb, ytop[x], ybottom[x]);
             // If our ceiling is higher than theirs, render upper wall
             uint32_t r1 = 0x010101 * (255-MIN(z,255)), r2 = 0x040007 * (31-MIN(z/8,255/8));
             // Draw between our and their ceiling
             if(nyceil < yceil) 
             {
-                render_draw_vline(x, cya, cnya-1, x==x0||x==x1 ? 0 :r1);
-                render_draw_point(x, cya, 0);
-                render_draw_point(x, cnya-1, 0);
+                //render_draw_vline(x, cya, cnya-1, x==x0||x==x1 ? 0 :r1);
+                //render_draw_point(x, cya, 0);
+                //render_draw_point(x, cnya-1, 0);
+                render_vline_textured(x, cya, cnya-1, ya, nya, &_textures[TEXTURE_DIRT], texture_idx, z);
             }
             // Shrink remaining window below these ceilings
             ytop[x] = CLAMP(MAX(cya, cnya), ytop[x], SCR_H-1);
@@ -471,9 +514,10 @@ void render_DrawWall(r_wall_t *wall, world_t *world, int *ytop, int *ybottom)
             // Between their and our wall
             if(nyfloor > yfloor)
             {
-                render_draw_vline(x, cnyb+1, cyb, x==x0||x==x1 ? 0 : r2);
-                render_draw_point(x, cnyb+1, 0);
-                render_draw_point(x, cyb, 0);
+                //render_draw_vline(x, cnyb+1, cyb, x==x0||x==x1 ? 0 : r2);
+                //render_draw_point(x, cnyb+1, 0);
+                //render_draw_point(x, cyb, 0);
+                render_vline_textured(x, cnyb+1, cyb, nyb, yb, &_textures[TEXTURE_DIRT], texture_idx, z);
             }
             // Shrink the remaining window above these floors
             ybottom[x] = CLAMP(MIN(cyb, cnyb), 0, ybottom[x]);
@@ -481,10 +525,7 @@ void render_DrawWall(r_wall_t *wall, world_t *world, int *ytop, int *ybottom)
         else
         {
             // No neighbor, draw wall
-            uint32_t r = 0x010101 * (255- MIN(z, 255));
-            render_draw_vline(x, cya, cyb, x==x0||x==x1 ? 0 : r);
-            render_draw_point(x, cya, 0);
-            render_draw_point(x, cyb, 0);
+            render_vline_textured(x, cya, cyb, ya, yb, texture, texture_idx, z);
             ytop[x] = ybottom[x];
         }
         
@@ -513,7 +554,7 @@ int8_t render_init(void)
 
     // Create window
     temp_window = SDL_CreateWindow("TestName", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED,
-    		SCR_W, SCR_H, SDL_WINDOW_SHOWN);
+    		SCR_W, SCR_H, SDL_WINDOW_SHOWN | SDL_WINDOW_RESIZABLE);
     if(temp_window == NULL)
     {
     	printf("No window %s\n", SDL_GetError());
@@ -524,6 +565,7 @@ int8_t render_init(void)
 
     // Create renderer
     _renderer = SDL_CreateRenderer(_window, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC);
+    SDL_RenderSetLogicalSize(_renderer, SCR_W, SCR_H);
 
     // Set render color to white
     SDL_SetRenderDrawColor(_renderer, 0xFF, 0xFF, 0xFF, 0xFF);
@@ -534,6 +576,21 @@ int8_t render_init(void)
     {
         printf("SDL_image: %s\n", IMG_GetError());
         return -1;
+    }
+
+    // Load all textures
+    for(int i = 0; i < NUM_TEXTURES; ++i)
+    {
+        _textures[i].img = render_load_texture(_texture_names[i]);
+        if(_textures[i].img == NULL)
+        {
+            // ERROR
+            printf("ERROR: Can't load texture %s\n", _texture_names[i]);
+            return -1;
+        }
+        SDL_QueryTexture(_textures[i].img, NULL, NULL, &_textures[i].w, &_textures[i].h);
+        _textures[i].xscale = 5;
+        _textures[i].yscale = 5;
     }
 
     // Set default render settings
@@ -552,6 +609,10 @@ int8_t render_close(void)
 {
     SDL_DestroyWindow(_window);
 
+    for(int i = 0; i < NUM_TEXTURES; ++i)
+    {
+        if(_textures[i].img) SDL_DestroyTexture(_textures[i].img);
+    }
     _window = NULL;
     _renderer = NULL;
 
@@ -626,7 +687,7 @@ int8_t render_reset_screen(void)
         return -1;
     }
     // Set render color to white & clear screen with it
-    SDL_SetRenderDrawColor(_renderer, 0xFF, 0xFF, 0xFF, 0xFF);
+    SDL_SetRenderDrawColor(_renderer, 0x0, 0x0, 0x0, 0xFF);
     SDL_RenderClear(_renderer);
 
     return 0;
@@ -701,6 +762,59 @@ int8_t render_draw_vline(uint32_t x, uint32_t y0, uint32_t y1, uint32_t color)
     SDL_RenderDrawLine(_renderer, x, y0, x, y1);
 }
 
+/**
+ * Draw a vertical line on the screen using a texture
+ * @param[in] x The x position
+ * @param[in] y0 The start y
+ * @param[in] y1 The end y
+ * @param[in] ceil The ceiling y of the wall (lower y)
+ * @param[in] floor The floor y of the wall (higher y)
+ * @param[in] texture The texture to use
+ * @param[in] idx The horizontal index to use for the texture
+ * @param[in] z The z position of the texture (used for coloring)
+ */
+int8_t render_vline_textured(uint32_t x, uint32_t y0, uint32_t y1, 
+                             uint32_t ceil, uint32_t floor, 
+                             image_t *texture, uint32_t idx, 
+                             uint16_t z)
+{
+    // Rectangles!
+    SDL_Rect src, dest;
+
+    // Set color correction
+    uint8_t mod = 0xFF -  MIN(z, 0xFF);
+    SDL_SetTextureColorMod(texture->img, mod, mod, mod);
+
+    src.w = 1;
+    dest.w = 1;
+    src.x  = idx % texture->w;
+    dest.x = x;
+    dest.y = y0;
+    dest.h = y1 - y0;
+    // Calculate start/end Y positions for the wall
+    if(y0 == ceil)
+    {
+        src.y = 0;
+    }
+    else
+    {
+        src.y = PointOnLine(ceil, 0, floor, texture->h - 1, y0);
+    }
+
+    // Get floor idx
+    if(y1 == floor)
+    {
+        src.h = texture->h - src.y;
+    }
+    else
+    {
+        src.h = PointOnLine(ceil, 0, floor, texture->h - 1, y1) - src.y;
+    }
+    
+    // Draw the line!
+    SDL_RenderCopy(_renderer, texture->img, &src, &dest);
+}
+
 int8_t render_draw_point(uint32_t x, uint32_t y, uint32_t color)
 {
     uint8_t r, g, b;
@@ -714,11 +828,19 @@ int8_t render_draw_point(uint32_t x, uint32_t y, uint32_t color)
 }
 
 /**
- * 
+ * Toggle debugging for render drawing
  */
-void toggle_debug(void)
+void render_toggle_debug(void)
 {
     debugging = (debugging) ? 0 : 1;
+}
+
+/**
+ * Toggle fullscreen mode for the renderer
+ */
+void render_set_fullscreen(int fs)
+{
+    SDL_SetWindowFullscreen(_window, (fs) ? SDL_WINDOW_FULLSCREEN : 0);
 }
 
 /**
@@ -763,183 +885,3 @@ int8_t render_draw_world(void)
     debugging = 0;
     render_draw_screen();
 }
-
-
-#if 0
-// Old single pass renderer
-int8_t render_draw_world(void)
-{
-    // Get game world data
-    world_t *world = world_get_world();
-    player_t *player = &(world->player);
-    int numSectors = world->numSectors;
-    // Initialize render queue
-    r_queue_t rqueue[MAX_PORTALS], *rhead=rqueue, *rtail=rqueue;
-    // Initialize drawing bounds
-    int ytop[SCR_W]={0}, ybottom[SCR_W], *rendered_sects;
-    uint32_t i;
-
-    rendered_sects = malloc(sizeof(int) * numSectors);
-
-    for(i = 0; i < SCR_W; ++i) ybottom[i] = SCR_H - 1;
-    for(i = 0; i < numSectors; ++i) rendered_sects[i] = 0;
-
-    // First, reset the whole screen
-    render_reset_screen();
-
-    // Set HEAD to the player's position
-    rhead->sectorN = player->sector; rhead->sx1 = 0; rhead->sx2 = SCR_W-1;
-    if(++rhead == rqueue+MAX_PORTALS) rhead = rqueue;
-    // Get player rotation
-    float pcos = cosf(player->direction), psin = sinf(player->direction);
-
-    // Begin render loop for world
-    do
-    {
-        const r_queue_t now = *rtail;
-        if(++rtail == rqueue + MAX_PORTALS) rtail = rqueue;
-
-        if(rendered_sects[now.sectorN] & 0x21) continue; // Odd = still rendering. 20 = give up
-        
-        ++rendered_sects[now.sectorN];
-        // Get a sector handle
-        const sector_t *sect = &(world->sectors[now.sectorN]);
-
-        // Render all of the walls facing the player
-        for(i = 0; i < sect->num_vert; ++i)
-        {
-            // Vector IDs
-            uint32_t vid1, vid2;
-            // Vector coordinates
-            xy_t v1, v2;
-            // Translated vector coordinates
-            xyz_t t1, t2;
-
-            // Get the vertices, adjusted for player position
-            vid1 = sect->vertices[i], vid2 = sect->vertices[i+1];
-            v1.x = world->vertices[vid1].x - player->pos.x, v2.x = world->vertices[vid2].x - player->pos.x;
-            v1.y = world->vertices[vid1].y - player->pos.y, v2.y = world->vertices[vid2].y - player->pos.y;
-            // Rotate vertices around player view
-            t1.x = v1.x * psin - v1.y * pcos;   t1.z = v1.x * pcos + v1.y * psin;
-            t2.x = v2.x * psin - v2.y * pcos;   t2.z = v2.x * pcos + v2.y * psin;
-            // Check if the wall is visible at all
-            if(t1.z <= -1e-4f && t2.z <= -1e-4f) continue;
-
-            // If wall is partially obscured, clip it against player's view
-            if(t1.z <= 0 || t2.z <= 0)
-            {
-                float nearz = 1e-4f, farz = 5, nearside = 1e-6f, farside = 20.f;
-                // Find intersection b/t wall and approximate edge of vision
-                xy_t i1 = Intersect(t1.x, t1.z, t2.x, t2.z, -nearside, nearz, -farside, farz);
-                xy_t i2 = Intersect(t1.x, t1.z, t2.x, t2.z, nearside, nearz, farside, farz);
-                if(t1.z < nearz) { if(i1.y > 0) { t1.x = i1.x; t1.z = i1.y; } else { t1.x = i2.x; t1.z = i2.y; } }
-                if(t2.z < nearz) { if(i1.y > 0) { t2.x = i1.x; t2.z = i1.y; } else { t2.x = i2.x; t2.z = i2.y; } }
-            }
-
-            // Run perspective transforms
-            float xscale1 = _rsettings.hfov / t1.z, yscale1 = _rsettings.vfov / t1.z;
-            float xscale2 = _rsettings.hfov / t2.z, yscale2 = _rsettings.vfov / t2.z;
-            int x1 = SCR_W/2 - (int)(t1.x * xscale1);
-            int x2 = SCR_W/2 - (int)(t2.x * xscale2);
-
-            // Only render if visible
-            if(x1 >= x2 || x2 < now.sx1 || x1 > now.sx2) continue;
-
-            // Get floor/ceiling heights, relative to where player is viewing
-            float yceil  = sect->ceil  - (player->pos.z + player->height);
-            float yfloor = sect->floor - (player->pos.z + player->height);
-            // Check the edge type. <0 means wall, other = boundary with another sector
-            int neighbor = sect->neighbors[i];
-            float nyceil=0, nyfloor=0;
-            if(neighbor >= 0)
-            {
-                nyceil  = world->sectors[neighbor].ceil  - (player->pos.z + player->height);
-                nyfloor = world->sectors[neighbor].floor - (player->pos.z + player->height);
-            }
-            
-            // Project out ceiling & floor heights onto screen coordinates (Y coordinates)
-            int y1a = SCR_H/2 - (int)(YAW(yceil, t1.z) * yscale1), y1b = SCR_H/2 - (int)(YAW(yfloor, t1.z) * yscale1);
-            int y2a = SCR_H/2 - (int)(YAW(yceil, t2.z) * yscale2), y2b = SCR_H/2 - (int)(YAW(yfloor, t2.z) * yscale2);
-            // Repeat for neighboring sector
-            int ny1a = SCR_H/2 - (int)(YAW(nyceil, t1.z) * yscale1), ny1b = SCR_H/2 - (int)(YAW(nyfloor, t1.z) * yscale1);
-            int ny2a = SCR_H/2 - (int)(YAW(nyceil, t2.z) * yscale2), ny2b = SCR_H/2 - (int)(YAW(nyfloor, t2.z) * yscale2);
-
-            // Start wall rendering loop
-            int beginx = MAX(x1, now.sx1), endx = MIN(x2, now.sx2);
-            for(int x = beginx; x <= endx; ++x)
-            {
-                // Calc Z coordinate (only used for lighting)
-                int z = ((x - x1) * (t2.z - t1.z) / (x2-x1) + t1.z) * 7;
-                // Get Y coords for ceiling & floor (clamped)
-                int ya = (x-x1) * (y2a-y1a) / (x2-x1) + y1a, cya = CLAMP(ya, ytop[x], ybottom[x]);
-                int yb = (x-x1) * (y2b-y1b) / (x2-x1) + y1b, cyb = CLAMP(yb, ytop[x], ybottom[x]);
-                // Draw the ceiling
-                render_draw_vline(x, ytop[x], cya-1, 0x222222);
-                render_draw_point(x, ytop[x], 0x111111);
-                render_draw_point(x, cya-1, 0x111111);
-                // Draw floor
-                render_draw_vline(x, cyb+1, ybottom[x], 0x0000AA);
-                render_draw_point(x, cyb+1, 0x111111);
-                render_draw_point(x, ybottom[x], 0x111111);
-
-                // Is there a sector behind this edge?
-                if(neighbor >= 0)
-                {
-                    // Draw *their* floor and ceiling
-                    int nya = (x-x1) * (ny2a-ny1a) / (x2-x1) + ny1a, cnya = CLAMP(nya, ytop[x], ybottom[x]);
-                    int nyb = (x-x1) * (ny2b-ny1b) / (x2-x1) + ny1b, cnyb = CLAMP(nyb, ytop[x], ybottom[x]);
-                    // If our ceiling is higher than theirs, render upper wall
-                    uint32_t r1 = 0x010101 * (255-MIN(z,255)), r2 = 0x040007 * (31-MIN(z/8,255/8));
-                    // Draw between our and their ceiling
-                    if(nyceil < yceil) 
-                    {
-                        render_draw_vline(x, cya, cnya-1, x==x1||x==x2 ? 0 :r1);
-                        render_draw_point(x, cya, 0);
-                        render_draw_point(x, cnya-1, 0);
-                    }
-                    // Shrink remaining window below these ceilings
-                    ytop[x] = CLAMP(MAX(cya, cnya), ytop[x], SCR_H-1);
-                    // If our floor is lower than theirs, render bottom wall.
-                    // Between their and our wall
-                    if(nyfloor > yfloor)
-                    {
-                        render_draw_vline(x, cnyb+1, cyb, x==x1||x==x2 ? 0 : r2);
-                        render_draw_point(x, cnyb+1, 0);
-                        render_draw_point(x, cyb, 0);
-                    }
-                    // Shrink the remaining window above these floors
-                    ybottom[x] = CLAMP(MIN(cyb, cnyb), 0, ybottom[x]);
-                }
-                else
-                {
-                    // No neighbor, draw wall
-                    uint32_t r = 0x010101 * (255- MIN(z, 255));
-                    render_draw_vline(x, cya, cyb, x==x1||x==x2 ? 0 : r);
-                    render_draw_point(x, cya, 0);
-                    render_draw_point(x, cyb, 0);
-                }
-                
-            } // End of wall loop
-            // Schedule neighboring sector for rending within window
-            if(neighbor >= 0 && endx >= beginx && (rhead+MAX_PORTALS+1-rtail)%MAX_PORTALS)
-            {
-                rhead->sectorN = neighbor; rhead->sx1 = beginx; rhead->sx2 = endx;
-                if(++rhead == rqueue+MAX_PORTALS) rhead = rqueue;
-            }
-
-        } // End of sector loop
-        if(debugging)
-        {
-            SDL_RenderPresent(_renderer);
-            SDL_Delay(200);
-        }
-        ++rendered_sects[now.sectorN];
-    } while (rhead != rtail);
-    
-    debugging = 0;
-    // Draw final screen
-    render_draw_screen();
-
-    free(rendered_sects);
-}
-#endif

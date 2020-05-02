@@ -23,7 +23,7 @@ The only command line argument right now is the name of the file containing leve
 - **C**: Crouch
 - **Mouse**: Look up/down and left/right
 - **Q**: Quit
-- **F**: Enable render debugging for one frame
+- **F**: Toggle fullscreen mode
 
 # World definition files
 A world is represented in a simple text document. The document contains the following three things, where all values in brackets are variables.

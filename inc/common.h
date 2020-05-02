@@ -47,6 +47,11 @@
 // Determine if two floats are equal
 #define FEQ(a,b) (fabs(a - b) < 0.001)
 
+#define PointOnLine(x0, y0, x1, y1, x) (((x)-(x0)) * ((y1)-(y0)) / ((x1)-(x0)) + y0)
+
+// Get magnitude of a line
+#define LineMagnitude(x,y) (sqrtf( ((x)*(x)) + ((y)*(y)) ) )
+
 #define _xy(pt) pt.x, pt.y
 
 /* ***********************************

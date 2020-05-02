@@ -21,6 +21,13 @@
  * Public Typedefs
  * ***********************************/
 
+typedef enum texture_name_enum
+{
+    TEXTURE_BRICK = 0,
+    TEXTURE_DIRT  = 1,
+    NUM_TEXTURES  = 2
+} texture_name_t;
+
 // Public structure to hold sprite info
 typedef struct image_struct
 {
@@ -28,6 +35,8 @@ typedef struct image_struct
 
     uint32_t w;
     uint32_t h;
+    // How many map units long is this texture (horiz/vert)
+    float xscale, yscale;
 } image_t;
 
 /* ***********************************
@@ -53,10 +62,15 @@ int8_t render_draw_image(image_t *sprite,
 
 // Draw a vertical line on the screen
 int8_t render_draw_vline(uint32_t x, uint32_t y0, uint32_t y1, uint32_t color);
+int8_t render_vline_textured(uint32_t x, uint32_t y0, uint32_t y1, 
+                             uint32_t ceil, uint32_t floor, 
+                             image_t *texture, uint32_t idx, 
+                             uint16_t z);
 // Draw a point on the screen
 int8_t render_draw_point(uint32_t x, uint32_t y, uint32_t color);
 
-void toggle_debug(void);
+void render_toggle_debug(void);
+void render_set_fullscreen(int fs);
 
 // Draw the game world
 int8_t render_draw_world(void);
