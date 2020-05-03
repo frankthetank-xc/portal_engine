@@ -6,6 +6,7 @@
 #define __WORLD_H__
 
 #include "common.h"
+#include "render.h"
 #include "input.h"
 
 /* ***********************************
@@ -19,6 +20,13 @@
  * Public Typedefs
  * ***********************************/
 
+typedef struct wall_struct
+{
+    int32_t v0, v1;
+    int32_t neighbor;
+    texture_name_t texture_low, texture_mid, texture_high;
+} wall_t;
+
 typedef struct sector_struct
 {
     float floor, ceil;
@@ -30,6 +38,7 @@ typedef struct sector_struct
     // List of neighbor sectors, stored as sector IDs
     // Neighbors are in the same order as vertices!
     int32_t *neighbors;
+    texture_name_t texture_floor, texture_ceil;
 } sector_t;
 
 typedef struct player_struct

@@ -32,6 +32,8 @@
 #define COLOR_WALL      0xFF0000
 #define COLOR_FLOOR     0x0F0F0F
 
+#define DIST_SHADE_MULT (5)
+
 // For use in calculating ceiling/floor
 #define YAW(y,z) (y + z*player->yaw)
 
@@ -102,14 +104,29 @@ static int debugging = 0;
 static const char *_texture_names[NUM_TEXTURES] = 
 {
     "resource/brick.bmp",
-    "resource/dirt.bmp"
+    "resource/dirt.bmp",
+    "resource/cobble.bmp"
 };
 
-static image_t _textures[NUM_TEXTURES];
+static image_t _textures[NUM_TEXTURES] =
+{
+    {NULL,NULL,0,0,0, 5, 20},
+    {NULL,NULL,0,0,0, 5, 15},
+    {NULL,NULL,0,0,0, 5, 5}
+};
+
+// For drawing anything with direct pixels
+static SDL_Texture *_screen_buffer;
+static SDL_PixelFormat *_fmt;
+static uint32_t *_scr_pix;
+static int _scr_pitch;
 
 // Variables for keeping track of 
 static uint8_t  sectors_visited[MAX_SECTORS];
 static r_wall_t wall_pool[MAX_WALLS];
+
+static int *ytop = NULL;
+static int *ybottom = NULL;
 
 /* ***********************************
  * Static function prototypes
@@ -123,6 +140,8 @@ int render_WallFront(r_wall_t *w1, r_wall_t *w2, player_t *player);
 r_wall_t *render_GetNextWall(r_wall_t **first, player_t *player);
 // Draw a single wall
 void render_DrawWall(r_wall_t *wall, world_t *world, int *ytop, int *ybottom);
+// Go from screen coords to map coords
+void render_screen_to_world(int sX, int sY, float mapY, float pcos, float psin, player_t *player, float *mapX, float *mapZ);
 
 /* ***********************************
  * Static function implementation
@@ -237,8 +256,8 @@ r_wall_t *render_PreProcess(world_t *world)
             }
 
             // Transform t0 and t1 onto screen X values
-            xscale0 = _rsettings.hfov / t0->z;  x0 = SCR_W/2 - (int)(t0->x * xscale0);
-            xscale1 = _rsettings.hfov / t1->z;  x1 = SCR_W/2 - (int)(t1->x * xscale1);
+            xscale0 = (_rsettings.hfov_angle * SCR_H) / t0->z;  x0 = SCR_W/2 - (int)(t0->x * xscale0);
+            xscale1 = (_rsettings.hfov_angle * SCR_H) / t1->z;  x1 = SCR_W/2 - (int)(t1->x * xscale1);
 
             // Skip if the projected X values are out of range
             if(x0 >= x1 || x1 < 0 || x0 > (SCR_W - 1)) continue;
@@ -431,13 +450,14 @@ void render_DrawWall(r_wall_t *wall, world_t *world, int *ytop, int *ybottom)
     xyz_t *t0, *t1;
     int32_t neighbor;
     float yscale0, yscale1, yceil, yfloor, nyceil = 0, nyfloor = 0;
-    sector_t *sect;
+    sector_t *sect, *nbr = NULL;
     player_t *player;
     int x0, x1;
     int y0a, y1a, y0b, y1b, ny0a, ny1a, ny0b, ny1b;
     int beginx, endx;
     int u0, u1;
     image_t *texture;
+    float pcos, psin;
 
     if(wall == NULL || world == NULL || ytop == NULL || ybottom == NULL) return;
 
@@ -456,19 +476,24 @@ void render_DrawWall(r_wall_t *wall, world_t *world, int *ytop, int *ybottom)
     yceil  = sect->ceil  - (player->pos.z + player->height);
     yfloor = sect->floor - (player->pos.z + player->height);
 
+    // Get cos/sin
+    pcos = cosf(player->direction);
+    psin = sinf(player->direction);
+
     // If we have a neighbor, get the floor/ceiling heights
     if(neighbor >= 0)
     {
-        nyceil  = world->sectors[neighbor].ceil  - (player->pos.z + player->height);
-        nyfloor = world->sectors[neighbor].floor - (player->pos.z + player->height);
+        nbr = &world->sectors[neighbor];
+        nyceil  = nbr->ceil  - (player->pos.z + player->height);
+        nyfloor = nbr->floor - (player->pos.z + player->height);
     }
 
     // Project our ceiling & floor
-    y0a = SCR_H/2 - (int)(YAW(yceil, t0->z) * yscale0), y0b = SCR_H/2 - (int)(YAW(yfloor, t0->z) * yscale0);
-    y1a = SCR_H/2 - (int)(YAW(yceil, t1->z) * yscale1), y1b = SCR_H/2 - (int)(YAW(yfloor, t1->z) * yscale1);
+    y0a = SCR_H/2 + (int)(-YAW(yceil, t0->z) * yscale0), y0b = SCR_H/2 + (int)(-YAW(yfloor, t0->z) * yscale0);
+    y1a = SCR_H/2 + (int)(-YAW(yceil, t1->z) * yscale1), y1b = SCR_H/2 + (int)(-YAW(yfloor, t1->z) * yscale1);
     // Repeat for neighboring sector
-    ny0a = SCR_H/2 - (int)(YAW(nyceil, t0->z) * yscale0), ny0b = SCR_H/2 - (int)(YAW(nyfloor, t0->z) * yscale0);
-    ny1a = SCR_H/2 - (int)(YAW(nyceil, t1->z) * yscale1), ny1b = SCR_H/2 - (int)(YAW(nyfloor, t1->z) * yscale1);
+    ny0a = SCR_H/2 + (int)(-YAW(nyceil, t0->z) * yscale0), ny0b = SCR_H/2 + (int)(-YAW(nyfloor, t0->z) * yscale0);
+    ny1a = SCR_H/2 + (int)(-YAW(nyceil, t1->z) * yscale1), ny1b = SCR_H/2 + (int)(-YAW(nyfloor, t1->z) * yscale1);
 
     // Start wall rendering
     beginx = MAX(x0, 0);
@@ -479,34 +504,44 @@ void render_DrawWall(r_wall_t *wall, world_t *world, int *ytop, int *ybottom)
         //    FROM wikipedia article on affine texture mapping
         int texture_idx = (u0*((x1-x)*t1->z) + u1*((x-x0)*t0->z)) / ((x1-x)*t1->z + (x-x0)*t0->z);
         // Calc Z coordinate (only used for lighting)
-        int z = ((x - x0) * (t1->z - t0->z) / (x1-x0) + t0->z) * 3;
+        int z = PointOnLine(x0, t0->z, x1, t1->z, x) * DIST_SHADE_MULT;
         // Get Y for ceiling & floor, clamped to occlusion array
         int ya = PointOnLine(x0, y0a, x1, y1a, x), cya = CLAMP(ya, ytop[x], ybottom[x]);
         int yb = PointOnLine(x0, y0b, x1, y1b, x), cyb = CLAMP(yb, ytop[x], ybottom[x]);
         // Check if occlusion array shows we're done with this x coord
-        if(ybottom[x] - ytop[x] < 2) continue;
-        // Draw the ceiling
-        render_draw_vline(x, ytop[x], cya-1, 0x222222);
-        render_draw_point(x, ytop[x], 0x111111);
-        render_draw_point(x, cya-1, 0x111111);
-        // Draw floor
-        render_draw_vline(x, cyb+1, ybottom[x], 0x0000AA);
-        render_draw_point(x, cyb+1, 0x111111);
-        render_draw_point(x, ybottom[x], 0x111111);
+        if(ybottom[x] - ytop[x] < 1) continue;
+
+        // Loop to draw ceiling and floor
+        for(int y = ytop[x]; y <= ybottom[x] && y < SCR_H; ++y)
+        {
+            // If we finish ceiling, switch to floor
+            if(y >= cya && y <= cyb) { y = cyb; continue; }
+            float height = (y < cya) ? yceil : yfloor;
+            float mapx, mapy;
+            int xi, yi;
+            image_t *ftexture = (y < cya) ? &_textures[sect->texture_ceil] : &_textures[sect->texture_floor];
+            render_screen_to_world(x, y, height, pcos, psin, player, &mapx, &mapy);
+            xi = mapx * ftexture->w / ftexture->xscale;
+            yi = mapy * ftexture->h / ftexture->yscale;
+            if(xi < 0) xi += ((-xi) / ftexture->w) * ftexture->w;
+            if(yi < 0) yi += ((-yi) / ftexture->h) * ftexture->h;
+            // Get depth for this floor/ceil piece
+            float tz = ((mapx - player->pos.x) * pcos) + ((mapy - player->pos.y) * psin);
+            // Draw the point
+            render_point_textured(x, y, (int)MAX(tz,0) * DIST_SHADE_MULT, ftexture, xi, yi);
+        }
+
         if(neighbor >= 0)
         {
             // Draw *their* floor and ceiling
             int nya = PointOnLine(x0, ny0a, x1, ny1a, x), cnya = CLAMP(nya, ytop[x], ybottom[x]);
             int nyb = PointOnLine(x0, ny0b, x1, ny1b, x), cnyb = CLAMP(nyb, ytop[x], ybottom[x]);
             // If our ceiling is higher than theirs, render upper wall
-            uint32_t r1 = 0x010101 * (255-MIN(z,255)), r2 = 0x040007 * (31-MIN(z/8,255/8));
             // Draw between our and their ceiling
             if(nyceil < yceil) 
             {
-                //render_draw_vline(x, cya, cnya-1, x==x0||x==x1 ? 0 :r1);
-                //render_draw_point(x, cya, 0);
-                //render_draw_point(x, cnya-1, 0);
-                render_vline_textured(x, cya, cnya-1, ya, nya, &_textures[TEXTURE_DIRT], texture_idx, z);
+                render_vline_textured(x, cya, cnya-1, ya, nya, &_textures[TEXTURE_DIRT],
+                                      sect->ceil - nbr->ceil, texture_idx, z);
             }
             // Shrink remaining window below these ceilings
             ytop[x] = CLAMP(MAX(cya, cnya), ytop[x], SCR_H-1);
@@ -514,10 +549,8 @@ void render_DrawWall(r_wall_t *wall, world_t *world, int *ytop, int *ybottom)
             // Between their and our wall
             if(nyfloor > yfloor)
             {
-                //render_draw_vline(x, cnyb+1, cyb, x==x0||x==x1 ? 0 : r2);
-                //render_draw_point(x, cnyb+1, 0);
-                //render_draw_point(x, cyb, 0);
-                render_vline_textured(x, cnyb+1, cyb, nyb, yb, &_textures[TEXTURE_DIRT], texture_idx, z);
+                render_vline_textured(x, cnyb+1, cyb, nyb, yb, &_textures[TEXTURE_DIRT], 
+                                      nbr->floor - sect->floor, texture_idx, z);
             }
             // Shrink the remaining window above these floors
             ybottom[x] = CLAMP(MIN(cyb, cnyb), 0, ybottom[x]);
@@ -525,11 +558,26 @@ void render_DrawWall(r_wall_t *wall, world_t *world, int *ytop, int *ybottom)
         else
         {
             // No neighbor, draw wall
-            render_vline_textured(x, cya, cyb, ya, yb, texture, texture_idx, z);
+            render_vline_textured(x, cya, cyb, ya, yb, texture, sect->ceil - sect->floor, texture_idx, z);
             ytop[x] = ybottom[x];
         }
-        
     }
+}
+
+/**
+ * Convert a screen coordinate to a world one
+ */
+void inline render_screen_to_world(int sX, int sY, float mapY, float pcos, float psin, player_t *player, float *mapX, float *mapZ)
+{
+    float tz, tx;
+    if(!mapX || !mapY) return;
+    *mapZ = mapY * _rsettings.vfov / (((SCR_H / 2) - sY) - (player->yaw * _rsettings.vfov));
+    *mapX = (*mapZ) * (SCR_W / 2 - sX) / (_rsettings.hfov_angle * SCR_H);
+
+    tx = (*mapZ) * pcos + (*mapX) * psin;
+    tz = (*mapZ) * psin - (*mapX) * pcos;
+    *mapX = tx + player->pos.x;
+    *mapZ = tz + player->pos.y;
 }
 
 /* ***********************************
@@ -546,7 +594,7 @@ int8_t render_init(void)
     int imgFlags;
 
     // Initialize SDL
-    if(SDL_Init(SDL_INIT_VIDEO) < 0)
+    if(SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMECONTROLLER) < 0)
     {
     	printf("Init error %s\n", SDL_GetError());
     	return 1;
@@ -554,7 +602,7 @@ int8_t render_init(void)
 
     // Create window
     temp_window = SDL_CreateWindow("TestName", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED,
-    		SCR_W, SCR_H, SDL_WINDOW_SHOWN | SDL_WINDOW_RESIZABLE);
+    		SCR_W, SCR_H, SDL_WINDOW_SHOWN /*| SDL_WINDOW_RESIZABLE*/);
     if(temp_window == NULL)
     {
     	printf("No window %s\n", SDL_GetError());
@@ -563,12 +611,30 @@ int8_t render_init(void)
 
     _window = temp_window;
 
+    _surface = NULL;
     // Create renderer
     _renderer = SDL_CreateRenderer(_window, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC);
+    if(_renderer == NULL)
+    {
+        printf("Can't make renderer: %s\n", SDL_GetError());
+    }
+
     SDL_RenderSetLogicalSize(_renderer, SCR_W, SCR_H);
 
     // Set render color to white
     SDL_SetRenderDrawColor(_renderer, 0xFF, 0xFF, 0xFF, 0xFF);
+
+    _screen_buffer = SDL_CreateTexture(_renderer, SDL_GetWindowPixelFormat(_window),
+                                          SDL_TEXTUREACCESS_STREAMING,
+                                          SCR_W, SCR_H);
+    if(_screen_buffer == NULL)
+    {
+        printf("Can't make screen buffer: %s\n", SDL_GetError());
+    }
+    SDL_SetTextureBlendMode(_screen_buffer, SDL_BLENDMODE_ADD);
+    _fmt = SDL_AllocFormat(SDL_GetWindowPixelFormat(_window));
+    _scr_pix = NULL;
+    _scr_pitch = 0;
 
     // Initialize image loading
     imgFlags = IMG_INIT_PNG;
@@ -581,7 +647,7 @@ int8_t render_init(void)
     // Load all textures
     for(int i = 0; i < NUM_TEXTURES; ++i)
     {
-        _textures[i].img = render_load_texture(_texture_names[i]);
+        _textures[i].img = render_load_texture(_texture_names[i], &_textures[i].pix, &_textures[i].pitch);
         if(_textures[i].img == NULL)
         {
             // ERROR
@@ -589,10 +655,9 @@ int8_t render_init(void)
             return -1;
         }
         SDL_QueryTexture(_textures[i].img, NULL, NULL, &_textures[i].w, &_textures[i].h);
-        _textures[i].xscale = 5;
-        _textures[i].yscale = 5;
+        //_textures[i].xscale = 5;
+        //_textures[i].yscale = 20;
     }
-
     // Set default render settings
     _rsettings.hfov_angle = HFOV_DEFAULT;
     _rsettings.hfov = HFOV_DEFAULT * SCR_W;
@@ -612,10 +677,10 @@ int8_t render_close(void)
     for(int i = 0; i < NUM_TEXTURES; ++i)
     {
         if(_textures[i].img) SDL_DestroyTexture(_textures[i].img);
+        if(_textures[i].pix) free(_textures[i].pix);
     }
     _window = NULL;
     _renderer = NULL;
-
     SDL_Quit();
 
     return 0;
@@ -626,19 +691,19 @@ int8_t render_close(void)
  * @param[in] filename
  * @return 0 on success
  */
-SDL_Texture *render_load_texture(const char *filename)
+SDL_Texture *render_load_texture(const char *filename, uint32_t **pix, int *pitch)
 {
-    SDL_Surface *surface;
+    SDL_Surface *temp_surface, *optimized_surface;
     SDL_Texture *texture;
 
     // Switch based on filetype
     if(strstr(filename, ".bmp"))
     {
-        surface = SDL_LoadBMP(filename);
+        temp_surface = SDL_LoadBMP(filename);
     }
     else if(strstr(filename, ".png"))
     {
-        surface = IMG_Load(filename);
+        temp_surface = IMG_Load(filename);
     }
     else
     {
@@ -646,17 +711,35 @@ SDL_Texture *render_load_texture(const char *filename)
         return NULL;
     }
     
-    if(surface == NULL)
+    if(temp_surface == NULL)
     {
     	printf("Could not load image %s!\nSDL Error: %s\n", filename, IMG_GetError());
     	return NULL;
     }
 
     // Optimize Surface
-    texture = SDL_CreateTextureFromSurface(_renderer, surface);
-    // Free temp surface
-    SDL_FreeSurface(surface);
-
+    texture = SDL_CreateTextureFromSurface(_renderer, temp_surface);
+    if(texture == NULL)
+    {
+        printf("Can't create texture: %s\n", SDL_GetError());
+    }
+    // If user wants pixels, give them correct type
+    if(pix)
+    {
+        optimized_surface = SDL_ConvertSurface(temp_surface, _fmt, 0);
+        if(optimized_surface == NULL)
+        {
+            printf("Can't optimize surface: %s\n", SDL_GetError());
+            return NULL;
+        }
+        SDL_SetSurfaceRLE(optimized_surface, 0);
+        *pix = malloc(optimized_surface->pitch * optimized_surface->h);
+        *pitch = optimized_surface->pitch;
+        memcpy((void *)*pix, optimized_surface->pixels, optimized_surface->pitch * optimized_surface->h);
+        SDL_FreeSurface(optimized_surface);
+    }
+    // Free temporary surface
+    SDL_FreeSurface(temp_surface);
     // Return handle to texture
     return texture;
 }
@@ -671,6 +754,7 @@ void render_free_image(image_t *image)
         return;
     }
 
+    free(image->pix);
     SDL_DestroyTexture(image->img);
     free(image);
 
@@ -702,7 +786,6 @@ int8_t render_draw_screen(void)
     {
         return -1;
     }
-
     SDL_RenderPresent(_renderer);
 
     return 0;
@@ -770,49 +853,94 @@ int8_t render_draw_vline(uint32_t x, uint32_t y0, uint32_t y1, uint32_t color)
  * @param[in] ceil The ceiling y of the wall (lower y)
  * @param[in] floor The floor y of the wall (higher y)
  * @param[in] texture The texture to use
+ * @param[in] height The actual height of the sector
  * @param[in] idx The horizontal index to use for the texture
  * @param[in] z The z position of the texture (used for coloring)
  */
 int8_t render_vline_textured(uint32_t x, uint32_t y0, uint32_t y1, 
-                             uint32_t ceil, uint32_t floor, 
-                             image_t *texture, uint32_t idx, 
-                             uint16_t z)
+                             int ceil, int floor, 
+                             image_t *texture, float height,
+                             uint32_t idx, uint16_t z)
 {
     // Rectangles!
-    SDL_Rect src, dest;
-
+    SDL_Rect src, dst;
+    int h, highest = y1;
     // Set color correction
-    uint8_t mod = 0xFF -  MIN(z, 0xFF);
+    uint8_t mod = 0xFF -  MIN(z, 0xE0);
     SDL_SetTextureColorMod(texture->img, mod, mod, mod);
 
     src.w = 1;
-    dest.w = 1;
+    dst.w = 1;
     src.x  = idx % texture->w;
-    dest.x = x;
-    dest.y = y0;
-    dest.h = y1 - y0;
-    // Calculate start/end Y positions for the wall
-    if(y0 == ceil)
+    dst.x = x;
+    // To avoid any divide-by-zero issues
+    if(floor == ceil) {++floor; }
+
+    // Adjust height based on visible height
+    height /= texture->yscale;
+    // Get screen height for a texture height of 1
+    h = PointOnLine(0, ceil, height, floor, 1.0) - ceil;
+
+    dst.y = floor;
+    while(dst.y + h > (int)y0 )
     {
-        src.y = 0;
-    }
-    else
-    {
-        src.y = PointOnLine(ceil, 0, floor, texture->h - 1, y0);
+        int ca = 0, cb = 0;
+        dst.y -= h;
+        // Start from the bottom and draw up
+        if(dst.y > (int)y1)
+        {
+            continue;
+        }
+        if(dst.y + h <= (int)y0)
+        {
+            break;
+        }
+        // Clamp the start (and height) if above ceil
+        if(dst.y < (int)y0)
+        {
+            ca = y0 - dst.y;
+            dst.y = y0;
+        }
+        // Clamp end if below cell
+        if(dst.y + (h - ca) > highest)
+        {
+            cb = (dst.y + h) - (ca + highest);
+        }
+        dst.h = highest - dst.y;
+        highest = dst.y;
+        if(dst.h < 1) continue;
+        src.y = (ca != 0) ? ((float)texture->h * ((float)ca)) / h : 0;
+        src.h = ((float)texture->h * dst.h) / h;
+        SDL_RenderCopy(_renderer, texture->img, &src, &dst);
     }
 
-    // Get floor idx
-    if(y1 == floor)
-    {
-        src.h = texture->h - src.y;
-    }
-    else
-    {
-        src.h = PointOnLine(ceil, 0, floor, texture->h - 1, y1) - src.y;
-    }
+    return 1;
+}
+
+int8_t render_point_textured(uint32_t x, uint32_t y, uint32_t z,
+                             image_t *texture, 
+                             uint32_t tx, uint32_t ty)
+{
+    // Set color correction
+    uint8_t mod = 0xFF -  MIN(z, 0xE0);
+    uint32_t pixel;
+    uint8_t r, g, b;
+
+    // Set source x and y with wrapping
+    tx = tx % texture->w;
+    ty = ty % texture->h;
+
+    // Get colors
+    SDL_GetRGB(texture->pix[(ty * texture->pitch / sizeof(uint32_t)) + tx],
+                _fmt, &r, &g, &b);
     
-    // Draw the line!
-    SDL_RenderCopy(_renderer, texture->img, &src, &dest);
+    // Apply color mods
+    r = r * mod / 0xFF;
+    g = g * mod / 0xFF;
+    b = b * mod / 0xFF;
+    // Draw the point
+    _scr_pix[(y * _scr_pitch / sizeof(uint32_t)) + x] = SDL_MapRGBA(_fmt, r,g,b,0xFF);
+    return 1;
 }
 
 int8_t render_draw_point(uint32_t x, uint32_t y, uint32_t color)
@@ -825,6 +953,8 @@ int8_t render_draw_point(uint32_t x, uint32_t y, uint32_t color)
     SDL_SetRenderDrawColor(_renderer, r, g, b, 0xFF);
 
     SDL_RenderDrawPoint(_renderer, x, y);
+
+    return 1;
 }
 
 /**
@@ -851,10 +981,22 @@ int8_t render_draw_world(void)
     // Get game world data
     world_t *world = world_get_world();
     player_t *player = &(world->player);
-    // Initialize occlusion arrays
-    int ytop[SCR_W]={0}, ybottom[SCR_W];
+
+    //int ytop[SCR_W], ybottom[SCR_W];
     uint32_t i;
+    uint32_t bg;
     r_wall_t *wqueue = NULL;
+    int numPix;
+    void *pix;
+
+    if(ytop == NULL)
+    {
+        ytop = malloc(SCR_W * sizeof(int));
+    }
+    if(ybottom == NULL)
+    {
+        ybottom = malloc(SCR_W * sizeof(int));
+    }
 
     // Start with preprocessing
     wqueue = render_PreProcess(world);
@@ -864,6 +1006,17 @@ int8_t render_draw_world(void)
     {
         ytop[i] = 0;
         ybottom[i] = SCR_H - 1;
+    }
+
+    bg = SDL_MapRGBA(_fmt, 0, 0, 0, 0);
+    if(SDL_LockTexture(_screen_buffer, NULL, &pix, &_scr_pitch) != 0)
+    {
+        printf("Can't stream to texture\n");
+    }
+    _scr_pix = (uint32_t *)pix;
+    for(i = 0; i < (_scr_pitch / sizeof(uint32_t)) * SCR_H; ++i)
+    {
+        _scr_pix[i] = bg;
     }
 
     // Reset the whole screen
@@ -881,6 +1034,10 @@ int8_t render_draw_world(void)
             SDL_Delay(500);
         }
     }
+    // Blit screen buffer to the screen
+    _scr_pix = NULL;
+    SDL_UnlockTexture(_screen_buffer);
+    SDL_RenderCopy(_renderer, _screen_buffer, NULL, NULL);
 
     debugging = 0;
     render_draw_screen();

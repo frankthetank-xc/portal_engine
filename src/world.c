@@ -29,6 +29,7 @@
 #define PLAYER_CROUCH_HEIGHT 2.5
 #define PLAYER_HEAD_MARGIN 1
 #define PLAYER_KNEE_MARGIN 2
+#define PLAYER_RADIUS (0.3)
 
 #define PLAYER_MOVE_VEL 0.2
 #define PLAYER_BACK_VEL 0.1
@@ -38,6 +39,8 @@
 
 #define MOUSE_X_SCALE (0.01f)
 #define MOUSE_Y_SCALE (0.03f)
+#define JOY_X_SCALE (0.07f)
+#define JOY_Y_SCALE (0.15f)
 
 /* ***********************************
  * Private Typedefs
@@ -78,6 +81,9 @@ void world_handle_keys(keys_t *keys)
     double pi = acos(-1);
     player_t *player = &_world.player;
     int x, y;
+    float lx, ly, rx, ry;
+
+    input_get_joystick(&lx, &ly, &rx, &ry);
 
     /** Move the player */
     if(keys->left)  { player->direction -= 0.02; }
@@ -85,26 +91,48 @@ void world_handle_keys(keys_t *keys)
     CLAMP(player->direction, 0.0, 2 * pi);
 
     player->velocity.x = 0; player->velocity.y = 0;
-    if(keys->w || keys->up)
-    { 
-        player->velocity.x += (cosf(player->direction) * PLAYER_MOVE_VEL);
-        player->velocity.y += (sinf(player->direction) * PLAYER_MOVE_VEL);
-    }
-    if(keys->s || keys->down)
+    if(fabs(lx) > 0.1 || fabs(ly) > 0.1)
     {
-        player->velocity.x += -(cosf(player->direction) * PLAYER_BACK_VEL);
-        player->velocity.y += -(sinf(player->direction) * PLAYER_BACK_VEL);
+        // Forward/backward
+        if(ly < 0)
+        {
+            player->velocity.x = -(cosf(player->direction) * PLAYER_MOVE_VEL * ly);
+            player->velocity.y = -(sinf(player->direction) * PLAYER_MOVE_VEL * ly);
+        }
+        else
+        {
+            player->velocity.x = -(cosf(player->direction) * PLAYER_BACK_VEL * ly);
+            player->velocity.y = -(sinf(player->direction) * PLAYER_BACK_VEL * ly);
+        }
+        
+        // Left/right
+        player->velocity.x += -(sinf(player->direction) * PLAYER_MOVE_VEL * lx);
+        player->velocity.y +=  (cosf(player->direction) * PLAYER_MOVE_VEL * lx);
     }
-    if(keys->d)
-    { 
-        player->velocity.x += -(sinf(player->direction) * PLAYER_MOVE_VEL);
-        player->velocity.y +=  (cosf(player->direction) * PLAYER_MOVE_VEL);
-    }
-    if(keys->a)
+    else
     {
-        player->velocity.x +=  (sinf(player->direction) * PLAYER_MOVE_VEL);
-        player->velocity.y += -(cosf(player->direction) * PLAYER_MOVE_VEL);
+        if(keys->w || keys->up)
+        { 
+            player->velocity.x += (cosf(player->direction) * PLAYER_MOVE_VEL);
+            player->velocity.y += (sinf(player->direction) * PLAYER_MOVE_VEL);
+        }
+        if(keys->s || keys->down)
+        {
+            player->velocity.x += -(cosf(player->direction) * PLAYER_BACK_VEL);
+            player->velocity.y += -(sinf(player->direction) * PLAYER_BACK_VEL);
+        }
+        if(keys->d)
+        { 
+            player->velocity.x += -(sinf(player->direction) * PLAYER_MOVE_VEL);
+            player->velocity.y +=  (cosf(player->direction) * PLAYER_MOVE_VEL);
+        }
+        if(keys->a)
+        {
+            player->velocity.x +=  (sinf(player->direction) * PLAYER_MOVE_VEL);
+            player->velocity.y += -(cosf(player->direction) * PLAYER_MOVE_VEL);
+        }
     }
+    
     if(keys->space)
     {
         // If player is on the ground, let him JUMP
@@ -141,10 +169,19 @@ void world_handle_keys(keys_t *keys)
     //if(keys->up) { player->yaw -= 0.1; }
     //player->yaw = CLAMP(player->yaw, -5, 5);
 
-    // Get mouse info
+    // Get look info
     mouse_get_input(&x, &y);
-    player->direction += x * MOUSE_X_SCALE;
-    player->yaw = CLAMP(player->yaw + y*MOUSE_Y_SCALE, -5, 5);
+    if(fabs(rx) > 0.05 || fabs(ry) > 0.05)
+    {
+        player->direction +=  rx * JOY_X_SCALE;
+        player->yaw = CLAMP(player->yaw + ry*JOY_Y_SCALE, -5, 5);
+    }
+    else
+    {
+        player->direction += x * MOUSE_X_SCALE;
+        player->yaw = CLAMP(player->yaw + y*MOUSE_Y_SCALE, -5, 5);
+    }
+    
 }
 
 /**
@@ -266,6 +303,10 @@ int8_t world_load(const char *filename)
                 rc = sscanf(ptr, "%*i %f %f %i%n", &sect->floor, &sect->ceil, &sectVertices, &n);
                 ptr += n;
 
+                // TODO load textures
+                sect->texture_floor = TEXTURE_COBBLE;
+                sect->texture_ceil  = TEXTURE_DIRT;
+
                 sect->num_vert = sectVertices;
 
                 sect->vertices = (int32_t *)malloc((sectVertices + 1) * sizeof(int32_t));
@@ -348,8 +389,10 @@ void world_move_player(keys_t *keys)
     // Construct vector for player movement
     float dx = player->velocity.x, dy = player->velocity.y;
     xy_t dest = {px+dx, py+dy};
+    xy_t farDest;
     xy_t ppos = {px, py};
     sector_t *sect;
+    int prev_sect = -1;
 
     // Check user keys
     world_handle_keys(keys);
@@ -361,9 +404,6 @@ void world_move_player(keys_t *keys)
         {
             sect = &_world.sectors[_world.player.sector];
             done = 1;
-
-            //if(!inside_sector(&ppos,sect)) printf("Player not inside sector?\n");
-
             // Collision detection
             for(uint16_t s = 0; s < sect->num_vert; ++s)
             {
@@ -374,18 +414,18 @@ void world_move_player(keys_t *keys)
                 xy_t *v0 = &_world.vertices[sect->vertices[s+0]];
                 xy_t *v1 = &_world.vertices[sect->vertices[s+1]];
                 dest.x = px+dx; dest.y = py+dy;
+                farDest.x = dest.x + ((dx > 0) ? PLAYER_RADIUS : -PLAYER_RADIUS);
+                farDest.y = dest.y + ((dy > 0) ? PLAYER_RADIUS : -PLAYER_RADIUS);
 
                 // Check if player is about to cross an edge
-                //if(IntersectBox(px,py, px+dx, py+dy, v0->x, v0->y, v1->x, v1->y)
-                //    && PointSide(px+dx, py+dy, v0->x, v0->y, v1->x, v1->y) < 0)
-                if(lines_intersect(&ppos, &dest, v0, v1)
-                  && (!inside_sector(&dest, sect)))
-                {
-                    float hole_low  = neighbor < 0 ?  9e9 : MAX(sect->floor, nsect->floor);
-                    float hole_high = neighbor < 0 ? -9e9 : MIN(sect->ceil,  nsect->ceil);
-
-                    if((hole_high < (player->pos.z + player->height + player->headmargin))
+                float hole_low  = neighbor < 0 ?  9e9 : MAX(sect->floor, nsect->floor);
+                float hole_high = neighbor < 0 ? -9e9 : MIN(sect->ceil,  nsect->ceil);
+                if((neighbor < 0) || hole_high < (player->pos.z + player->height + player->headmargin)
                     || (hole_low > player->pos.z + player->kneemargin))
+                {
+                    // Compare far line
+                    if(lines_intersect(&ppos, &farDest, v0, v1)
+                       && (!inside_sector(&farDest, sect)))
                     {
                         // Player can't fit, project their vector along the wall
                         // TODO this isn't super efficient (that sqrt call
@@ -393,13 +433,16 @@ void world_move_player(keys_t *keys)
                         // rarely enough that it doesn't really matter....
                         project_vector(dx,dy, (v1->x - v0->x), (v1->y - v0->y), &dx, &dy);
                     }
-                    else
-                    {
-                        // Player can fit - update active sector
-                        player->sector = neighbor;
-                        newsector = 1;
-                        done = 0;
-                    }
+                }
+                else if(lines_intersect(&ppos, &dest, v0, v1)
+                        && (!inside_sector(&dest, sect)))
+                {
+                    // Player can fit - update active sector
+                    if(prev_sect == neighbor) continue;
+                    prev_sect = player->sector;
+                    player->sector = neighbor;
+                    newsector = 1;
+                    done = 0;
                 }
 
             }

@@ -38,10 +38,12 @@ typedef struct keys_struct
  * ***********************************/
 
 void input_init();
+void input_close();
 void input_update(void);
 void input_set_mouselook(int enable);
 void input_toggle_mouselook(void);
 keys_t *input_get(void);
 void mouse_get_input(int *x, int *y);
+void input_get_joystick(float *lx, float *ly, float *rx, float *ry);
 
 #endif /*__INPUT_H__*/

@@ -74,8 +74,15 @@ int main(int argc, char *argv[])
     if(world_load(filename) != 0)
     {
         printf("Could not load world %s\n", filename);
+        input_close();
         render_close();
         return -1;
+    }
+
+    if(argc > 2)
+    {
+        fullscreen = 1;
+        render_set_fullscreen(fullscreen);
     }
 
     world = world_get_world();
@@ -112,6 +119,7 @@ int main(int argc, char *argv[])
     }
     printf("Exiting...\n");
 
+    input_close();
     render_close();
 
     return 0;

@@ -14,8 +14,8 @@
  * ***********************************/
 
 // Screen dimensions
-#define SCR_H (480 * 2)
-#define SCR_W (640 * 2)
+#define SCR_H (480 * 1)
+#define SCR_W (640 * 1)
 
 /* ***********************************
  * Public Typedefs
@@ -23,15 +23,18 @@
 
 typedef enum texture_name_enum
 {
-    TEXTURE_BRICK = 0,
-    TEXTURE_DIRT  = 1,
-    NUM_TEXTURES  = 2
+    TEXTURE_BRICK  = 0,
+    TEXTURE_DIRT   = 1,
+    TEXTURE_COBBLE = 2,
+    NUM_TEXTURES   = 3
 } texture_name_t;
 
 // Public structure to hold sprite info
 typedef struct image_struct
 {
     SDL_Texture *img;
+    uint32_t *pix;
+    int pitch;
 
     uint32_t w;
     uint32_t h;
@@ -48,7 +51,7 @@ int8_t render_init(void);
 int8_t render_close(void);
 
 // Load Image
-SDL_Texture *render_load_texture(const char *filename);
+SDL_Texture *render_load_texture(const char *filename, uint32_t **pix, int *pitch);
 void render_free_image(image_t *image);
 
 // High level screen controls
@@ -63,9 +66,12 @@ int8_t render_draw_image(image_t *sprite,
 // Draw a vertical line on the screen
 int8_t render_draw_vline(uint32_t x, uint32_t y0, uint32_t y1, uint32_t color);
 int8_t render_vline_textured(uint32_t x, uint32_t y0, uint32_t y1, 
-                             uint32_t ceil, uint32_t floor, 
-                             image_t *texture, uint32_t idx, 
-                             uint16_t z);
+                             int ceil, int floor, 
+                             image_t *texture, float height,
+                             uint32_t idx, uint16_t z);
+int8_t render_point_textured(uint32_t x, uint32_t y, uint32_t z,
+                             image_t *texture, 
+                             uint32_t tx, uint32_t ty);
 // Draw a point on the screen
 int8_t render_draw_point(uint32_t x, uint32_t y, uint32_t color);
 

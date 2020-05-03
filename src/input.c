@@ -20,6 +20,8 @@
  * Private Definitions
  * ***********************************/
 
+#define STICK_MAX (32767)
+
 /* ***********************************
  * Private Typedefs
  * ***********************************/
@@ -30,6 +32,7 @@
 
 /** Global window object */
 static keys_t _keys;
+SDL_GameController *gameController;
 
 /* ***********************************
  * Static function prototypes
@@ -46,8 +49,14 @@ static keys_t _keys;
 void input_init()
 {
     memset(&_keys, 0, sizeof(_keys));
+    gameController = NULL;
 
     input_set_mouselook(1);
+}
+
+void input_close()
+{
+    if(gameController) SDL_GameControllerClose(gameController);
 }
 
 /**
@@ -56,11 +65,62 @@ void input_init()
 void input_update(void)
 {
     SDL_Event event;
+    if(gameController == NULL)
+    {
+        // See if we can open the came controller
+        if(SDL_NumJoysticks() > 0)
+        {
+            for(int i = 0; i < SDL_NumJoysticks(); ++i)
+            {
+                if(SDL_IsGameController(i))
+                {
+                    // Try to open the controller
+                    gameController = SDL_GameControllerOpen(i);
+                    if(gameController) 
+                    {
+                        SDL_GameControllerEventState(SDL_ENABLE);
+                        break;
+                    }
+                }
+            }
+            
+        }
+    }
+    else
+    {
+        if(SDL_GameControllerGetAttached(gameController) != SDL_TRUE)
+        {
+            SDL_GameControllerClose(gameController);
+            gameController = NULL;
+        }
+    }
+    
     while(SDL_PollEvent(&event))
     {
         /** Get key inputs */
         switch(event.type)
         {
+            case SDL_CONTROLLERBUTTONDOWN:
+            case SDL_CONTROLLERBUTTONUP:
+                switch(event.cbutton.button)
+                {
+                    case SDL_CONTROLLER_BUTTON_DPAD_UP: 
+                        _keys.w = (event.type == SDL_CONTROLLERBUTTONDOWN); break;
+                    case SDL_CONTROLLER_BUTTON_DPAD_DOWN:
+                        _keys.s = (event.type == SDL_CONTROLLERBUTTONDOWN); break;
+                    case SDL_CONTROLLER_BUTTON_DPAD_LEFT:
+                        _keys.left = (event.type == SDL_CONTROLLERBUTTONDOWN); break;
+                    case SDL_CONTROLLER_BUTTON_DPAD_RIGHT:
+                        _keys.right = (event.type == SDL_CONTROLLERBUTTONDOWN); break;
+                    case SDL_CONTROLLER_BUTTON_B:
+                        _keys.c = (event.type == SDL_CONTROLLERBUTTONDOWN); break;
+                    case SDL_CONTROLLER_BUTTON_LEFTSTICK:
+                        _keys.shift = (event.type == SDL_CONTROLLERBUTTONDOWN); break;
+                    case SDL_CONTROLLER_BUTTON_A:
+                        _keys.space = (event.type == SDL_CONTROLLERBUTTONDOWN); break;
+                    case SDL_CONTROLLER_BUTTON_START:
+                        _keys.q = (event.type == SDL_CONTROLLERBUTTONDOWN); break;
+                }
             case SDL_KEYDOWN:
             case SDL_KEYUP:
                 switch(event.key.keysym.sym)
@@ -85,6 +145,7 @@ void input_update(void)
                 break;
             case SDL_QUIT: 
                 _keys.q = 1; break;
+                break;
             default:
                 break;
         }
@@ -131,4 +192,23 @@ void mouse_get_input(int *x, int *y)
     {
         SDL_GetRelativeMouseState(x, y);
     }
+}
+
+void input_get_joystick(float *lx, float *ly, float *rx, float *ry)
+{
+    if(gameController)
+    {
+        if(lx) *lx = SDL_GameControllerGetAxis(gameController, SDL_CONTROLLER_AXIS_LEFTX)  / (float)STICK_MAX;
+        if(ly) *ly = SDL_GameControllerGetAxis(gameController, SDL_CONTROLLER_AXIS_LEFTY)  / (float)STICK_MAX;
+        if(rx) *rx = SDL_GameControllerGetAxis(gameController, SDL_CONTROLLER_AXIS_RIGHTX) / (float)STICK_MAX;
+        if(ry) *ry = SDL_GameControllerGetAxis(gameController, SDL_CONTROLLER_AXIS_RIGHTY) / (float)STICK_MAX;
+    }
+    else
+    {
+        if(lx) *lx = 0;
+        if(ly) *ly = 0;
+        if(rx) *rx = 0;
+        if(ry) *ry = 0;
+    }
+    
 }
