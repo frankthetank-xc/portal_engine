@@ -2,6 +2,7 @@
 
 export
 build:
+	-mkdir ./obj
 	$(MAKE) -C ./src 
 
 clean:

@@ -4,7 +4,7 @@ ODIR=../obj
 IDIR=../inc
 OFILE=../test
 
-CFLAGS=-I. -I$(IDIR)
+CFLAGS=-I. -I$(IDIR) -std=c11
 
 _DEPS = render.h world.h util.h input.h common.h
 DEPS  = $(patsubst %,$(IDIR)/%,$(_DEPS))

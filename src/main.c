@@ -65,7 +65,12 @@ int main(int argc, char *argv[])
         filename = argv[1];
     }
 
-    if(render_init() != 0)
+    if(argc > 2)
+    {
+        fullscreen = 1;
+    }
+
+    if(render_init(fullscreen) != 0)
     {
         return -1;
     }
@@ -81,11 +86,7 @@ int main(int argc, char *argv[])
         return -1;
     }
 
-    if(argc > 2)
-    {
-        fullscreen = 1;
-        render_set_fullscreen(fullscreen);
-    }
+
 
     world = world_get_world();
     player = &world->player;

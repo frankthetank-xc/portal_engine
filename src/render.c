@@ -658,10 +658,11 @@ void inline render_screen_to_world(int sX, int sY, double mapY, double pcos, dou
  * Creates an SDL window
  * @return 0 on success
  */
-int8_t render_init(void)
+int8_t render_init(int fullscreen)
 {
     SDL_Window *temp_window;
     int imgFlags;
+    uint32_t wFlags;
 
     // Initialize SDL
     if(SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMECONTROLLER) < 0)
@@ -670,9 +671,11 @@ int8_t render_init(void)
     	return 1;
     }
 
+    wFlags = SDL_WINDOW_SHOWN | SDL_WINDOW_RESIZABLE;
+    if(fullscreen) wFlags |= SDL_WINDOW_FULLSCREEN;
     // Create window
     temp_window = SDL_CreateWindow("TestName", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED,
-    		SCR_W, SCR_H, SDL_WINDOW_SHOWN | SDL_WINDOW_RESIZABLE);
+    		SCR_W, SCR_H, wFlags);
     if(temp_window == NULL)
     {
     	printf("No window %s\n", SDL_GetError());
@@ -685,7 +688,12 @@ int8_t render_init(void)
     _renderer = SDL_CreateRenderer(_window, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC);
     if(_renderer == NULL)
     {
-        printf("Can't make renderer: %s\n", SDL_GetError());
+        _renderer = SDL_CreateRenderer(_window, -1, SDL_RENDERER_SOFTWARE);
+        if(_renderer == NULL)
+        {
+            printf("Can't make renderer: %s\n", SDL_GetError());
+            return -1;
+        }
     }
 
     SDL_RenderSetLogicalSize(_renderer, SCR_W, SCR_H);

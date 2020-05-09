@@ -56,7 +56,7 @@ typedef struct image_struct
  * ***********************************/
 
 // SDL High Level Control
-int8_t render_init(void);
+int8_t render_init(int fullscreen);
 int8_t render_close(void);
 
 // Load Image
