@@ -1,5 +1,8 @@
 /**
  * File to wrap up raw SDL calls to simplify graphics
+ * @note World files are defined with all sectors going counterclockwise,
+ * and all inner walls in sectors going clockwise. When rendered, v0 and
+ * v1 of a sector get flipped to make sure the orientation is correct.
  */
 
 /* ***********************************
@@ -32,7 +35,11 @@
 #define COLOR_WALL      0xFF0000
 #define COLOR_FLOOR     0x0F0F0F
 
-#define DIST_SHADE_MULT (5)
+#define DIST_SHADE_MULT (1)
+
+#define SKYBOX_NAME "resource/citybg.bmp"
+#define SKYBOX_W (_skybox.w * HFOV_DEFAULT / (PI))
+#define SKYBOX_H (_skybox.h * VFOV_DEFAULT * 2)
 
 // For use in calculating ceiling/floor
 #define YAW(y,z) (y + z*player->yaw)
@@ -52,9 +59,9 @@ typedef struct r_queue_struct
 
 typedef struct render_settings_struct
 {
-    float hfov_angle;
-    float hfov;
-    float vfov;
+    double hfov_angle;
+    double hfov;
+    double vfov;
 } render_settings_t;
 
 /**
@@ -76,7 +83,7 @@ struct r_wall_struct
     // Screen X positions (x0 is start, x1 is end)
     int x0, x1;
     // Texture start & end
-    image_t *texture;
+    int32_t texture, lo_texture, hi_texture;
     int u0, u1;
 
     int32_t neighbor;
@@ -105,15 +112,29 @@ static const char *_texture_names[NUM_TEXTURES] =
 {
     "resource/brick.bmp",
     "resource/dirt.bmp",
-    "resource/cobble.bmp"
+    "resource/cobble.bmp",
+    "resource/crosshatch.bmp",
+    "resource/drywall.bmp",
+    "resource/moss.bmp",
+    "resource/rock.bmp",
+    "resource/rustysheet.bmp",
+    "resource/smoothstone.bmp"
 };
 
 static image_t _textures[NUM_TEXTURES] =
 {
     {NULL,NULL,0,0,0, 5, 20},
     {NULL,NULL,0,0,0, 5, 15},
-    {NULL,NULL,0,0,0, 5, 5}
+    {NULL,NULL,0,0,0, 5, 15},
+    {NULL,NULL,0,0,0, 5, 15},
+    {NULL,NULL,0,0,0, 5, 15},
+    {NULL,NULL,0,0,0, 5, 15},
+    {NULL,NULL,0,0,0, 5, 15},
+    {NULL,NULL,0,0,0, 5, 15},
+    {NULL,NULL,0,0,0, 5, 15}
 };
+
+static image_t _skybox;
 
 // For drawing anything with direct pixels
 static SDL_Texture *_screen_buffer;
@@ -132,20 +153,52 @@ static int *ybottom = NULL;
  * Static function prototypes
  * ***********************************/
 
+// Draw the skybox onto the static pixel buffer
+void render_draw_skybox(player_t *player);
+
 // Preprocessing step for rendering
 r_wall_t *render_PreProcess(world_t *world);
+
 // Check if wall is in front of another wall
 int render_WallFront(r_wall_t *w1, r_wall_t *w2, player_t *player);
+
 // Get the the next wall
 r_wall_t *render_GetNextWall(r_wall_t **first, player_t *player);
+
 // Draw a single wall
 void render_DrawWall(r_wall_t *wall, world_t *world, int *ytop, int *ybottom);
+
 // Go from screen coords to map coords
-void render_screen_to_world(int sX, int sY, float mapY, float pcos, float psin, player_t *player, float *mapX, float *mapZ);
+void render_screen_to_world(int sX, int sY, double mapY, double pcos, double psin, player_t *player, double *mapX, double *mapZ);
 
 /* ***********************************
  * Static function implementation
  * ***********************************/
+
+/**
+ * Draws the skybox onto the static pixel buffer
+ */
+void render_draw_skybox(player_t *player)
+{
+    // Get starting x
+    int x0 = _skybox.w - ((player->direction * _skybox.w) / (2 * PI));
+    int y0 = (_skybox.h / 2) + ((player->yaw / MAX_YAW) *  (_skybox.h / 2));
+    int x1 = (x0 + SKYBOX_W);
+    int y1 = y0 + SKYBOX_H;
+
+    for(int x = 0; x < SCR_W; ++x)
+    {
+        for(int y = 0; y < SCR_H; ++y)
+        {
+            int ix = PointOnLine(0, x0, SCR_W, x1, x) % _skybox.w;
+            int iy = PointOnLine(0, y0, SCR_H, y1, y);
+            iy = MAX(iy, 0);
+            iy = MIN(iy, _skybox.h - 1);
+            _scr_pix[(y * _scr_pitch / sizeof(uint32_t)) + x] = 
+                _skybox.pix[(iy * _skybox.pitch / sizeof(uint32_t)) + ix];
+        }
+    }
+}
 
 /**
  * Rendering preprocessing step. Performs the following steps
@@ -161,7 +214,7 @@ r_wall_t *render_PreProcess(world_t *world)
     static uint32_t wcount = 0;
     r_wall_t *last_wall = NULL, *wall = NULL, *first_wall = NULL;;
     xy_t ppos;
-    float pcos, psin;
+    double pcos, psin;
     // Portal flooding queue
     uint32_t rqueue[MAX_PORTALS], *rhead=rqueue, *rtail=rqueue;
 
@@ -172,8 +225,8 @@ r_wall_t *render_PreProcess(world_t *world)
     ppos.y = world->player.pos.y;
 
     // Get sin/cos of player angle for later use
-    pcos = cosf(world->player.direction);
-    psin = sinf(world->player.direction);
+    pcos = cos(world->player.direction);
+    psin = sin(world->player.direction);
 
     // Initialize visited sectors list
     memset(sectors_visited, 0, MAX_SECTORS * sizeof(uint8_t));
@@ -191,27 +244,41 @@ r_wall_t *render_PreProcess(world_t *world)
         if(++rtail == rqueue + MAX_PORTALS) rtail = rqueue;
 
         // For each wall in the sector
-        for(int i = 0; i < sect->num_vert; ++i)
+        for(int i = 0; i < sect->num_walls; ++i)
         {
             // Get the two vertices
-            xy_t *v0 = &world->vertices[sect->vertices[i+0]];
-            xy_t *v1 = &world->vertices[sect->vertices[i+1]];
+            xy_t *v0 = &world->vertices[sect->walls[i].v1];
+            xy_t *v1 = &world->vertices[sect->walls[i].v0];
             xyz_t *t0, *t1;
-            float xscale0, xscale1;
+            double xscale0, xscale1;
             // TODO TODO configurable textures
-            image_t *texture = &_textures[0];
-            float texture_scale = texture->xscale;
+            image_t *texture = NULL;
+            double texture_scale = 1;
+            int tw = 100;
+            if(sect->walls[i].texture_mid < NUM_TEXTURES)
+            {
+                texture = &_textures[sect->walls[i].texture_mid];
+                
+            }
+            else if(sect->walls[i].texture_low < NUM_TEXTURES)
+            {
+                texture = &_textures[sect->walls[i].texture_low];
+            }
+            else if(sect->walls[i].texture_high < NUM_TEXTURES)
+            {
+                texture = &_textures[sect->walls[i].texture_high];
+            }
+            if(texture != NULL)
+            {
+                texture_scale = texture->xscale;
+                tw = texture->w;
+            }
+            
             int x0, x1, u0, u1;
 
             // Get pointer to the next active wall object
             wall = &wall_pool[wcount];
 
-            // First, sanity check that the player can see this
-            if(PointSide(ppos.x, ppos.y, v0->x, v0->y, v1->x, v1->y) < 0)
-            {
-                // Wall is facing the other way
-                continue;
-            }
             // Now check that the wall is within the player FOV
             // Generate points of the sector, rotated around player FOV
             t0 = &wall->t0; 
@@ -228,21 +295,20 @@ r_wall_t *render_PreProcess(world_t *world)
 
             // Set up texture mapping variables
             u0 = 0;
-            u1 = LineMagnitude(((v1->x - v0->x) / texture_scale), ((v1->y - v0->y) / texture_scale)) * texture->w;
-
+            u1 = LineMagnitude(((v1->x - v0->x) / texture_scale), ((v1->y - v0->y) / texture_scale)) * tw;
             // The wall is partially behind the player, so we have to clip it against
             // the player's view frustrum
             if(t0->z <= 0 || t1->z <= 0)
             {
-                float nearz = 1e-4f, farz = 5, nearside = 1e-6f, farside = 20.f;
+                double nearz = 1e-5f, farz = 5, nearside = 0e-5f, farside = 50.f;
                 xy_t org0 = {t0->x, t0->z}, org1 = {t1->x, t1->z};
                 // Find an intersection between the wall and approximate edge of vision
                 xy_t i1 = Intersect(t0->x, t0->z, t1->x, t1->z, -nearside, nearz, -farside, farz);
                 xy_t i2 = Intersect(t0->x, t0->z, t1->x, t1->z,  nearside, nearz,  farside, farz);
-                if(t0->z < nearz) { if(i1.y > 0) { t0->x = i1.x; t0->z = i1.y; } else { t0->x = i2.x; t0->z = i2.y; } }
-                if(t1->z < nearz) { if(i1.y > 0) { t1->x = i1.x; t1->z = i1.y; } else { t1->x = i2.x; t1->z = i2.y; } }
+                if(t0->z < 0) { if(i1.y > 0) { t0->x = i1.x; t0->z = i1.y; } else { t0->x = i2.x; t0->z = i2.y; } }
+                if(t1->z < 0) { if(i2.y > 0) { t1->x = i2.x; t1->z = i2.y; } else { t1->x = i1.x; t1->z = i1.y; } }
                 // Adjust texture mapping values
-                if(fabs(t1->x - t0->x) > fabs(t1->z - t0->x))
+                if(fabs(t1->x - t0->x) > fabs(t1->z - t0->z))
                 {
                     u0 = PointOnLine(org0.x, 0, org1.x, u1, t0->x);
                     u1 = PointOnLine(org0.x, 0, org1.x, u1, t1->x);
@@ -252,12 +318,11 @@ r_wall_t *render_PreProcess(world_t *world)
                     u0 = PointOnLine(org0.y, 0, org1.y, u1, t0->z);
                     u1 = PointOnLine(org0.y, 0, org1.y, u1, t1->z);
                 }
-                
             }
 
             // Transform t0 and t1 onto screen X values
-            xscale0 = (_rsettings.hfov_angle * SCR_H) / t0->z;  x0 = SCR_W/2 - (int)(t0->x * xscale0);
-            xscale1 = (_rsettings.hfov_angle * SCR_H) / t1->z;  x1 = SCR_W/2 - (int)(t1->x * xscale1);
+            xscale0 = (_rsettings.hfov_angle * SCR_H) / t0->z;  x0 = SCR_W/2 + (int)(t0->x * xscale0);
+            xscale1 = (_rsettings.hfov_angle * SCR_H) / t1->z;  x1 = SCR_W/2 + (int)(t1->x * xscale1);
 
             // Skip if the projected X values are out of range
             if(x0 >= x1 || x1 < 0 || x0 > (SCR_W - 1)) continue;
@@ -272,11 +337,11 @@ r_wall_t *render_PreProcess(world_t *world)
             wall->sector = sect;
             wall->v0 = v0;  wall->v1 = v1;
             wall->x0 = x0;  wall->x1 = x1;
-            wall->neighbor = sect->neighbors[i];
+            wall->neighbor = sect->walls[i].neighbor;
             wall->u0 = u0;  wall->u1 = u1;
-            wall->texture = texture;
-            // TODO fix
-            //wall->u1 = texture->w - 1;
+            wall->texture = sect->walls[i].texture_mid;
+            wall->lo_texture = sect->walls[i].texture_low;
+            wall->hi_texture = sect->walls[i].texture_high;
 
             if(wall->neighbor > -1 && sectors_visited[wall->neighbor] == 0)
             {
@@ -302,8 +367,8 @@ r_wall_t *render_PreProcess(world_t *world)
  */
 int render_WallFront(r_wall_t *w1, r_wall_t *w2, player_t *player)
 {
-    float t1, t2;
-    float px, py;
+    double t1, t2;
+    double px, py;
 
     if(w1 == NULL || w2 == NULL || player == NULL) return 0;
 
@@ -449,15 +514,14 @@ void render_DrawWall(r_wall_t *wall, world_t *world, int *ytop, int *ybottom)
 {
     xyz_t *t0, *t1;
     int32_t neighbor;
-    float yscale0, yscale1, yceil, yfloor, nyceil = 0, nyfloor = 0;
+    double yscale0, yscale1, yceil, yfloor, nyceil = 0, nyfloor = 0;
     sector_t *sect, *nbr = NULL;
     player_t *player;
     int x0, x1;
     int y0a, y1a, y0b, y1b, ny0a, ny1a, ny0b, ny1b;
     int beginx, endx;
     int u0, u1;
-    image_t *texture;
-    float pcos, psin;
+    double pcos, psin;
 
     if(wall == NULL || world == NULL || ytop == NULL || ybottom == NULL) return;
 
@@ -467,7 +531,6 @@ void render_DrawWall(r_wall_t *wall, world_t *world, int *ytop, int *ybottom)
     sect = wall->sector;
     player = &world->player;
     u0 = wall->u0, u1 = wall->u1;
-    texture = wall->texture;
     // Set up y scaling
     yscale0 = _rsettings.vfov / t0->z;
     yscale1 = _rsettings.vfov / t1->z;
@@ -477,8 +540,8 @@ void render_DrawWall(r_wall_t *wall, world_t *world, int *ytop, int *ybottom)
     yfloor = sect->floor - (player->pos.z + player->height);
 
     // Get cos/sin
-    pcos = cosf(player->direction);
-    psin = sinf(player->direction);
+    pcos = cos(player->direction);
+    psin = sin(player->direction);
 
     // If we have a neighbor, get the floor/ceiling heights
     if(neighbor >= 0)
@@ -505,6 +568,7 @@ void render_DrawWall(r_wall_t *wall, world_t *world, int *ytop, int *ybottom)
         int texture_idx = (u0*((x1-x)*t1->z) + u1*((x-x0)*t0->z)) / ((x1-x)*t1->z + (x-x0)*t0->z);
         // Calc Z coordinate (only used for lighting)
         int z = PointOnLine(x0, t0->z, x1, t1->z, x) * DIST_SHADE_MULT;
+        if(z < 0) continue;
         // Get Y for ceiling & floor, clamped to occlusion array
         int ya = PointOnLine(x0, y0a, x1, y1a, x), cya = CLAMP(ya, ytop[x], ybottom[x]);
         int yb = PointOnLine(x0, y0b, x1, y1b, x), cyb = CLAMP(yb, ytop[x], ybottom[x]);
@@ -516,19 +580,24 @@ void render_DrawWall(r_wall_t *wall, world_t *world, int *ytop, int *ybottom)
         {
             // If we finish ceiling, switch to floor
             if(y >= cya && y <= cyb) { y = cyb; continue; }
-            float height = (y < cya) ? yceil : yfloor;
-            float mapx, mapy;
+            double height = (y < cya) ? yceil : yfloor;
+            double mapx, mapy;
             int xi, yi;
+            int16_t ftx = (y < cya) ? sect->texture_ceil : sect->texture_floor;
+            if(!IS_TEXTURE(ftx)) continue;
+
             image_t *ftexture = (y < cya) ? &_textures[sect->texture_ceil] : &_textures[sect->texture_floor];
             render_screen_to_world(x, y, height, pcos, psin, player, &mapx, &mapy);
+            // yscale is for vertical scaling only,
+            // so use xscale even for the y. 
             xi = mapx * ftexture->w / ftexture->xscale;
-            yi = mapy * ftexture->h / ftexture->yscale;
+            yi = mapy * ftexture->h / ftexture->xscale;
             if(xi < 0) xi += ((-xi) / ftexture->w) * ftexture->w;
             if(yi < 0) yi += ((-yi) / ftexture->h) * ftexture->h;
             // Get depth for this floor/ceil piece
-            float tz = ((mapx - player->pos.x) * pcos) + ((mapy - player->pos.y) * psin);
+            double tz = ((mapx - player->pos.x) * pcos) + ((mapy - player->pos.y) * psin);
             // Draw the point
-            render_point_textured(x, y, (int)MAX(tz,0) * DIST_SHADE_MULT, ftexture, xi, yi);
+            render_point_textured(x, y, (int)MAX(tz,0) * DIST_SHADE_MULT, ftexture, xi, yi, wall->sector->brightness);
         }
 
         if(neighbor >= 0)
@@ -538,19 +607,19 @@ void render_DrawWall(r_wall_t *wall, world_t *world, int *ytop, int *ybottom)
             int nyb = PointOnLine(x0, ny0b, x1, ny1b, x), cnyb = CLAMP(nyb, ytop[x], ybottom[x]);
             // If our ceiling is higher than theirs, render upper wall
             // Draw between our and their ceiling
-            if(nyceil < yceil) 
+            if(nyceil < yceil && IS_TEXTURE(wall->hi_texture) && nya > 0) 
             {
-                render_vline_textured(x, cya, cnya-1, ya, nya, &_textures[TEXTURE_DIRT],
-                                      sect->ceil - nbr->ceil, texture_idx, z);
+                render_vline_textured_bitwise(x, cya, cnya-1, ya, nya, &_textures[wall->hi_texture],
+                                      sect->ceil - nbr->ceil, texture_idx, z, wall->sector->brightness);
             }
             // Shrink remaining window below these ceilings
             ytop[x] = CLAMP(MAX(cya, cnya), ytop[x], SCR_H-1);
             // If our floor is lower than theirs, render bottom wall.
             // Between their and our wall
-            if(nyfloor > yfloor)
+            if(nyfloor > yfloor && IS_TEXTURE(wall->lo_texture) && nyb < (SCR_H - 1))
             {
-                render_vline_textured(x, cnyb+1, cyb, nyb, yb, &_textures[TEXTURE_DIRT], 
-                                      nbr->floor - sect->floor, texture_idx, z);
+                render_vline_textured_bitwise(x, cnyb+1, cyb, nyb, yb, &_textures[wall->lo_texture], 
+                                      nbr->floor - sect->floor, texture_idx, z, wall->sector->brightness);
             }
             // Shrink the remaining window above these floors
             ybottom[x] = CLAMP(MIN(cyb, cnyb), 0, ybottom[x]);
@@ -558,7 +627,8 @@ void render_DrawWall(r_wall_t *wall, world_t *world, int *ytop, int *ybottom)
         else
         {
             // No neighbor, draw wall
-            render_vline_textured(x, cya, cyb, ya, yb, texture, sect->ceil - sect->floor, texture_idx, z);
+            if(IS_TEXTURE(wall->texture))
+                render_vline_textured_bitwise(x, cya, cyb, ya, yb, &_textures[wall->texture], sect->ceil - sect->floor, texture_idx, z, wall->sector->brightness);
             ytop[x] = ybottom[x];
         }
     }
@@ -567,12 +637,12 @@ void render_DrawWall(r_wall_t *wall, world_t *world, int *ytop, int *ybottom)
 /**
  * Convert a screen coordinate to a world one
  */
-void inline render_screen_to_world(int sX, int sY, float mapY, float pcos, float psin, player_t *player, float *mapX, float *mapZ)
+void inline render_screen_to_world(int sX, int sY, double mapY, double pcos, double psin, player_t *player, double *mapX, double *mapZ)
 {
-    float tz, tx;
+    double tz, tx;
     if(!mapX || !mapY) return;
     *mapZ = mapY * _rsettings.vfov / (((SCR_H / 2) - sY) - (player->yaw * _rsettings.vfov));
-    *mapX = (*mapZ) * (SCR_W / 2 - sX) / (_rsettings.hfov_angle * SCR_H);
+    *mapX = (*mapZ) * (sX - (SCR_W / 2)) / (_rsettings.hfov_angle * SCR_H);
 
     tx = (*mapZ) * pcos + (*mapX) * psin;
     tz = (*mapZ) * psin - (*mapX) * pcos;
@@ -602,7 +672,7 @@ int8_t render_init(void)
 
     // Create window
     temp_window = SDL_CreateWindow("TestName", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED,
-    		SCR_W, SCR_H, SDL_WINDOW_SHOWN /*| SDL_WINDOW_RESIZABLE*/);
+    		SCR_W, SCR_H, SDL_WINDOW_SHOWN | SDL_WINDOW_RESIZABLE);
     if(temp_window == NULL)
     {
     	printf("No window %s\n", SDL_GetError());
@@ -611,7 +681,6 @@ int8_t render_init(void)
 
     _window = temp_window;
 
-    _surface = NULL;
     // Create renderer
     _renderer = SDL_CreateRenderer(_window, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC);
     if(_renderer == NULL)
@@ -658,6 +727,15 @@ int8_t render_init(void)
         //_textures[i].xscale = 5;
         //_textures[i].yscale = 20;
     }
+    // Load skybox
+    _skybox.img = render_load_texture(SKYBOX_NAME, &_skybox.pix, &_skybox.pitch);
+    if(_skybox.img == NULL)
+    {
+        // ERROR
+        printf("ERROR: Can't load texture %s\n", SKYBOX_NAME);
+        return -1;
+    }
+    SDL_QueryTexture(_skybox.img, NULL, NULL, &_skybox.w, &_skybox.h);
     // Set default render settings
     _rsettings.hfov_angle = HFOV_DEFAULT;
     _rsettings.hfov = HFOV_DEFAULT * SCR_W;
@@ -679,6 +757,8 @@ int8_t render_close(void)
         if(_textures[i].img) SDL_DestroyTexture(_textures[i].img);
         if(_textures[i].pix) free(_textures[i].pix);
     }
+    if(_skybox.img) SDL_DestroyTexture(_skybox.img);
+    if(_skybox.pix) free(_skybox.pix);
     _window = NULL;
     _renderer = NULL;
     SDL_Quit();
@@ -770,8 +850,8 @@ int8_t render_reset_screen(void)
     {
         return -1;
     }
-    // Set render color to white & clear screen with it
-    SDL_SetRenderDrawColor(_renderer, 0x0, 0x0, 0x0, 0xFF);
+    // Set render color to black & clear screen with it
+    SDL_SetRenderDrawColor(_renderer, 0, 0, 0, 0xFF);
     SDL_RenderClear(_renderer);
 
     return 0;
@@ -859,14 +939,15 @@ int8_t render_draw_vline(uint32_t x, uint32_t y0, uint32_t y1, uint32_t color)
  */
 int8_t render_vline_textured(uint32_t x, uint32_t y0, uint32_t y1, 
                              int ceil, int floor, 
-                             image_t *texture, float height,
-                             uint32_t idx, uint16_t z)
+                             image_t *texture, double height,
+                             uint32_t idx, uint16_t z, uint8_t brightness)
 {
     // Rectangles!
     SDL_Rect src, dst;
     int h, highest = y1;
     // Set color correction
-    uint8_t mod = 0xFF -  MIN(z, 0xE0);
+    uint8_t mod = MIN(z, 0xE0);
+    mod = (mod > brightness) ? 0 : brightness - mod;
     SDL_SetTextureColorMod(texture->img, mod, mod, mod);
 
     src.w = 1;
@@ -909,22 +990,56 @@ int8_t render_vline_textured(uint32_t x, uint32_t y0, uint32_t y1,
         dst.h = highest - dst.y;
         highest = dst.y;
         if(dst.h < 1) continue;
-        src.y = (ca != 0) ? ((float)texture->h * ((float)ca)) / h : 0;
-        src.h = ((float)texture->h * dst.h) / h;
+        src.y = (ca != 0) ? ((double)texture->h * ((double)ca)) / h : 0;
+        src.h = ((double)texture->h * dst.h) / h;
         SDL_RenderCopy(_renderer, texture->img, &src, &dst);
     }
 
     return 1;
 }
 
-int8_t render_point_textured(uint32_t x, uint32_t y, uint32_t z,
-                             image_t *texture, 
-                             uint32_t tx, uint32_t ty)
+int8_t render_vline_textured_bitwise(
+                            uint32_t x, uint32_t y0, uint32_t y1,
+                            int ceil, int floor,
+                            image_t *texture, double height,
+                            uint32_t idx, uint16_t z, uint8_t brightness)
 {
     // Set color correction
-    uint8_t mod = 0xFF -  MIN(z, 0xE0);
+    uint8_t mod = MIN(z, 0xE0);
+    mod = (mod > brightness) ? 0 : brightness - mod;
+    // Set the range for y indices
+    int32_t u1 = (height * texture->h) / texture->yscale;
+    // Clamp idx
+    y0 = MAX(0, y0);
+    y1 = MIN(SCR_H - 1, y1);
+    idx = idx % texture->w;
+    for(uint32_t y = y0; y <= y1; ++y)
+    {
+        uint8_t r,g,b;
+        uint32_t u = PointOnLine(floor, 0, ceil, u1, (int32_t)y) % texture->h;
+        // Draw screen point x, y
+        SDL_GetRGB(texture->pix[(u * texture->pitch / sizeof(uint32_t)) + idx], _fmt,
+                    &r, &g, &b);
+        r = r * mod / 0xFF;
+        g = g * mod / 0xFF;
+        b = b * mod / 0xFF;
+        // Draw the point
+        _scr_pix[(y * _scr_pitch / sizeof(uint32_t)) + x] = SDL_MapRGBA(_fmt, r,g,b,0xFF);
+    }
+}                            
+
+int8_t render_point_textured(uint32_t x, uint32_t y, uint32_t z,
+                             image_t *texture, 
+                             uint32_t tx, uint32_t ty, uint8_t brightness)
+{
+    // Set color correction
     uint32_t pixel;
     uint8_t r, g, b;
+    uint8_t mod = MIN(z, 0xE0);
+    mod = (mod > brightness) ? 0 : brightness - mod;
+
+    x = CLAMP(x, 0, SCR_W - 1);
+    y = CLAMP(y, 0, SCR_H - 1);
 
     // Set source x and y with wrapping
     tx = tx % texture->w;
@@ -1014,12 +1129,13 @@ int8_t render_draw_world(void)
         printf("Can't stream to texture\n");
     }
     _scr_pix = (uint32_t *)pix;
-    for(i = 0; i < (_scr_pitch / sizeof(uint32_t)) * SCR_H; ++i)
-    {
-        _scr_pix[i] = bg;
-    }
+    //for(i = 0; i < (_scr_pitch / sizeof(uint32_t)) * SCR_H; ++i)
+    //{
+    //    _scr_pix[i] = bg;
+    //}
 
     // Reset the whole screen
+    render_draw_skybox(player);
     render_reset_screen();
 
     while(wqueue != NULL)

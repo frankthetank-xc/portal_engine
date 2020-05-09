@@ -34,9 +34,11 @@ A world is represented in a simple text document. The document contains the foll
 v [id] [x] [x]
 
 ### Sectors
-s [id] [floor height] [ceiling height] [number of vectors] {list of vector ID values} {list of neighbor sectors for each edge}
+s [id] [floorHeight] [ceilHeight] [floorTexture] [ceilTexture] [brightness] [number of walls] {list of walls}
+#### Walls
+[vertex0] [vertex1] [neighbor] [textureLow] [textureMiddle] [textureHigh]
 
-*For the list of neighboring sectors, an x represents a wall (no neighbor), while a numbered sector id represents a portal to a neighboring sector*
+*For the neighboring sectors, an x represents a wall (no neighbor), while a numbered sector id represents a portal to a neighboring sector*
 
 ### Player Info
 p [starting x coordinate] [starting y coordinate] [starting sector ID]

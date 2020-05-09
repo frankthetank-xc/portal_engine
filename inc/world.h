@@ -16,6 +16,8 @@
 /** Max number of sectors */
 #define MAX_SECTORS (1024)
 
+#define MAX_YAW (5.0)
+
 /* ***********************************
  * Public Typedefs
  * ***********************************/
@@ -24,27 +26,28 @@ typedef struct wall_struct
 {
     int32_t v0, v1;
     int32_t neighbor;
-    texture_name_t texture_low, texture_mid, texture_high;
+    int16_t texture_low, texture_mid, texture_high;
 } wall_t;
 
 typedef struct sector_struct
 {
-    float floor, ceil;
-    // Number of vertices
-    uint16_t num_vert;
-    // Array of vertices, stored as vertex IDs
-    // Vertices are in clockwise order!
-    int32_t *vertices;
-    // List of neighbor sectors, stored as sector IDs
-    // Neighbors are in the same order as vertices!
-    int32_t *neighbors;
-    texture_name_t texture_floor, texture_ceil;
+    // Height values for floor/ceiling
+    double floor, ceil;
+    uint16_t num_walls;
+    // Array of walls, stored in CLOCKWISE order
+    wall_t *walls;
+    // Brightness: 0 = pitch black, 255 = fully bright
+    uint8_t brightness;
+    int16_t texture_floor, texture_ceil;
 } sector_t;
 
 typedef struct player_struct
 {
+    // Current position + velocity vectors
     xyz_t pos, velocity;
-    float direction, yaw, height, headmargin, kneemargin;
+    // Direction and yaw as angles; height, headmargin, and kneemargin as heightvalues
+    double direction, yaw, height, headmargin, kneemargin;
+    // Current sector as sectorID
     uint32_t sector;
 } player_t;
 
@@ -61,11 +64,12 @@ typedef struct world_struct
  * Public Functions
  * ***********************************/
 int8_t world_load(const char *filename);
-void world_destroy(void);
+void world_close(void);
 
 // Player helper functions
 void world_move_player(keys_t *keys);
 void world_player_update_sector();
+int world_inside_sector(xy_t *p, sector_t *sect);
 
 world_t *world_get_world(void);
 

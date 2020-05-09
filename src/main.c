@@ -22,6 +22,7 @@
  * Private Defines
  * ***********************************/
 #define MOVE_LEN (1)
+#define TICK_SPAN ((int)(1000 / 60))
 
 /* ***********************************
  * Static Typedef
@@ -52,6 +53,7 @@ int main(int argc, char *argv[])
     keys_t *keys;
     char *filename;
     int fullscreen = 0;
+    uint32_t lastTick, curTick;
 
     if(argc < 2)
     {
@@ -87,6 +89,7 @@ int main(int argc, char *argv[])
 
     world = world_get_world();
     player = &world->player;
+    lastTick = SDL_GetTicks();
 
     while(done == 0)
     {
@@ -111,8 +114,12 @@ int main(int argc, char *argv[])
             render_set_fullscreen(fullscreen);
             keys->f = 0;
         }
-        
-        world_move_player(keys);
+        curTick = SDL_GetTicks();
+        while(curTick - lastTick > TICK_SPAN)
+        {
+            lastTick += TICK_SPAN;
+            world_move_player(keys);
+        }
 
         /** Update the screen */
         render_draw_world();
@@ -120,6 +127,7 @@ int main(int argc, char *argv[])
     printf("Exiting...\n");
 
     input_close();
+    world_close();
     render_close();
 
     return 0;

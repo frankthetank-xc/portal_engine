@@ -29,17 +29,18 @@
 #define PLAYER_CROUCH_HEIGHT 2.5
 #define PLAYER_HEAD_MARGIN 1
 #define PLAYER_KNEE_MARGIN 2
-#define PLAYER_RADIUS (0.3)
+#define PLAYER_RADIUS (0.5)
 
-#define PLAYER_MOVE_VEL 0.2
+#define PLAYER_MOVE_VEL 0.1
 #define PLAYER_BACK_VEL 0.1
 #define PLAYER_JUMP_VEL 1.2
 
-#define WALK_MULT (0.5)
+#define WALK_MULT (0.4)
+#define SPRINT_MULT (2)
 
-#define MOUSE_X_SCALE (0.01f)
+#define MOUSE_X_SCALE (-0.01f)
 #define MOUSE_Y_SCALE (0.03f)
-#define JOY_X_SCALE (0.07f)
+#define JOY_X_SCALE (-0.07f)
 #define JOY_Y_SCALE (0.15f)
 
 /* ***********************************
@@ -58,24 +59,27 @@ static world_t _world;
 
 void world_delete_sector(sector_t *sector);
 void world_handle_keys(keys_t *keys);
-int inside_sector(xy_t *p, sector_t *sect);
-
-void print_debug(void);
 
 /* ***********************************
  * Static function implementation
  * ***********************************/
 
+/**
+ * Free all data allocated for a sector
+ * @note DOES NOT free the sector_t itself!
+ * @param[in] sector The sector to free
+ */
 void world_delete_sector(sector_t *sector)
 {
     if(sector == NULL) { return; }
-
-    if(sector->vertices != NULL) { free(sector->vertices); }
-    if(sector->neighbors != NULL) { free(sector->neighbors); }
-
+    if(sector->walls != NULL) { free(sector->walls); }
     return;
 }
 
+/**
+ * Handles all movement and logic based on key inputs
+ * @param[in] keys The current keystate
+ */
 void world_handle_keys(keys_t *keys)
 {
     double pi = acos(-1);
@@ -86,9 +90,10 @@ void world_handle_keys(keys_t *keys)
     input_get_joystick(&lx, &ly, &rx, &ry);
 
     /** Move the player */
-    if(keys->left)  { player->direction -= 0.02; }
-    if(keys->right) { player->direction += 0.02; }
-    CLAMP(player->direction, 0.0, 2 * pi);
+    if(keys->left)  { player->direction += 0.04; }
+    if(keys->right) { player->direction -= 0.04; }
+    if(player->direction > (2*pi)) player->direction -= 2 * pi;
+    if(player->direction < 0) player->direction += 2 * pi;
 
     player->velocity.x = 0; player->velocity.y = 0;
     if(fabs(lx) > 0.1 || fabs(ly) > 0.1)
@@ -106,8 +111,8 @@ void world_handle_keys(keys_t *keys)
         }
         
         // Left/right
-        player->velocity.x += -(sinf(player->direction) * PLAYER_MOVE_VEL * lx);
-        player->velocity.y +=  (cosf(player->direction) * PLAYER_MOVE_VEL * lx);
+        player->velocity.x +=  (sinf(player->direction) * PLAYER_MOVE_VEL * lx);
+        player->velocity.y += -(cosf(player->direction) * PLAYER_MOVE_VEL * lx);
     }
     else
     {
@@ -121,12 +126,12 @@ void world_handle_keys(keys_t *keys)
             player->velocity.x += -(cosf(player->direction) * PLAYER_BACK_VEL);
             player->velocity.y += -(sinf(player->direction) * PLAYER_BACK_VEL);
         }
-        if(keys->d)
+        if(keys->a)
         { 
             player->velocity.x += -(sinf(player->direction) * PLAYER_MOVE_VEL);
             player->velocity.y +=  (cosf(player->direction) * PLAYER_MOVE_VEL);
         }
-        if(keys->a)
+        if(keys->d)
         {
             player->velocity.x +=  (sinf(player->direction) * PLAYER_MOVE_VEL);
             player->velocity.y += -(cosf(player->direction) * PLAYER_MOVE_VEL);
@@ -159,71 +164,34 @@ void world_handle_keys(keys_t *keys)
         }
     }
     
-    if(player->height < PLAYER_HEIGHT || keys->shift)
+    if(player->height < PLAYER_HEIGHT)
     {
         player->velocity.x *= WALK_MULT;
         player->velocity.y *= WALK_MULT;
     }
+    if(keys->shift)
+    {
+        player->velocity.x *= SPRINT_MULT;
+        player->velocity.y *= SPRINT_MULT;
+    }
 
     //if(keys->down) { player->yaw += 0.1; }
     //if(keys->up) { player->yaw -= 0.1; }
-    //player->yaw = CLAMP(player->yaw, -5, 5);
+    //player->yaw = CLAMP(player->yaw, -MAX_YAW, MAX_YAW);
 
     // Get look info
     mouse_get_input(&x, &y);
     if(fabs(rx) > 0.05 || fabs(ry) > 0.05)
     {
         player->direction +=  rx * JOY_X_SCALE;
-        player->yaw = CLAMP(player->yaw + ry*JOY_Y_SCALE, -5, 5);
+        player->yaw = CLAMP(player->yaw + ry*JOY_Y_SCALE, -MAX_YAW, MAX_YAW);
     }
     else
     {
         player->direction += x * MOUSE_X_SCALE;
-        player->yaw = CLAMP(player->yaw + y*MOUSE_Y_SCALE, -5, 5);
+        player->yaw = CLAMP(player->yaw + y*MOUSE_Y_SCALE, -MAX_YAW, MAX_YAW);
     }
     
-}
-
-/**
- * Algorithm to test if a point is inside a sector. 
- * Draw a line west from the point. If it intersects an odd number
- * of edges, it is inside the sector. If it intersects an even number
- * of edges, it is outside the sector.
- * 
- * Based on how the Build engine checks if a point is within a sector.
- * 
- * @param[in] x The x coordinate
- * @param[in] y The y coordinate
- * @param[in] sect The sector
- */
-int inside_sector(xy_t *p, sector_t *sect)
-{
-    float dx, x;
-    uint16_t count = 0;
-    for(int i = 0; i < sect->num_vert; ++i)
-    {
-        // Get the vertices for this edge
-        xy_t *v0 = &_world.vertices[sect->vertices[i]], *v1 = &_world.vertices[sect->vertices[i+1]];
-
-        // Check that vertices contain the right y position
-        if(p->y > MAX(v0->y,v1->y) || p->y < MIN(v0->y,v1->y)) continue;
-        // Get the x position at this y position
-        dx = (v1->x - v0->x) / (v1->y - v0->y);
-        x  = (v0->x) + (dx * (p->y - v0->y));
-
-        if(x < p->x) ++count;
-    }
-
-    return (count & 0x1) ? 1 : 0;
-}
-
-void print_debug(void)
-{
-    player_t *player = &_world.player;
-
-    printf("\rPlayer pos %5.2f%5.2f%5.2f ", player->pos.x, player->pos.y, player->pos.z);
-    printf("angle %4.2f", player->direction);
-    fflush(stdout);
 }
 
 /* ***********************************
@@ -237,7 +205,7 @@ void print_debug(void)
  * v [id] [x] [y]
  * 
  * SECTORS:
- * s [id] [floor] [ceiling] [number of vectors] [list of vector ID] [list of sector ID portals]
+ * s [id] [floor] [ceiling] [brightness] [number of vectors] [list of vector ID] [list of sector ID portals]
  * 
  * PLAYER:
  * p [x] [y] [sector ID]
@@ -246,13 +214,14 @@ void print_debug(void)
 
 /**
  * Load specified input file
+ * @param[in] filename The name of the world file to load
  * @return 0 on success
  */
 int8_t world_load(const char *filename)
 {
     FILE *fp = fopen(filename, "rt");
-    char buf[BUFLEN], word[BUFLEN], *ptr;
-    int n, i, rc, numVertices = 0, sectVertices;
+    char buf[BUFLEN * 4], word[BUFLEN], *ptr;
+    int n, i, rc, numVertices = 0;
     xy_t *vert;
     sector_t *sect;
 
@@ -286,64 +255,61 @@ int8_t world_load(const char *filename)
         ptr = buf + n;
         switch((rc > 0) ? word[0] : '\0')
         {
-            // Vertex
-            case 'v':
+            case 'v':   // Vertex
                 _world.vertices = realloc(_world.vertices, (++numVertices) * sizeof(xy_t));
                 vert = &(_world.vertices[numVertices - 1]);
                 // Read in: ID X Y
-                rc = sscanf(ptr, "%*i %f %f", &(vert->x), &(vert->y));
+                rc = sscanf(ptr, "%*i %lf %lf", &(vert->x), &(vert->y));
                 break;
-            // Sector
-            case 's':
+            case 's':   // Sector
                 
                 _world.sectors = realloc(_world.sectors, (++(_world.numSectors)) * sizeof(sector_t));
                 sect = &(_world.sectors[_world.numSectors - 1]);
 
                 // Read in: ID Floor Ceiling NumVertices
-                rc = sscanf(ptr, "%*i %f %f %i%n", &sect->floor, &sect->ceil, &sectVertices, &n);
+                rc = sscanf(ptr, "%*i %lf %lf %hi %hi %hhi %hu%n", &sect->floor, &sect->ceil,
+                                                            &sect->texture_floor, &sect->texture_ceil,
+                                                            &sect->brightness, &sect->num_walls, &n);
                 ptr += n;
 
                 // TODO load textures
-                sect->texture_floor = TEXTURE_COBBLE;
-                sect->texture_ceil  = TEXTURE_DIRT;
+                //sect->texture_floor = TEXTURE_MOSS;
+                //sect->texture_ceil  = TEXTURE_SMOOTHSTONE;
 
-                sect->num_vert = sectVertices;
+                sect->walls = (wall_t *)malloc(sect->num_walls * sizeof(wall_t));
 
-                sect->vertices = (int32_t *)malloc((sectVertices + 1) * sizeof(int32_t));
-                sect->neighbors = (int32_t *)malloc(sectVertices * sizeof(int32_t));
-
-                // Read in all vertices
-                for(i = 0; i < sectVertices; ++i)
+                // Read in all walls
+                for(i = 0; i < sect->num_walls; ++i)
                 {
-                    rc = sscanf(ptr, "%i%n", &sect->vertices[i], &n);
+                    // Get vertices
+                    rc = sscanf(ptr, "%i %i%n", &sect->walls[i].v0, &sect->walls[i].v1, &n);
                     ptr += n;
-                }
-
-                // Copy the first vertex to the last to make the sector loop
-                sect->vertices[sectVertices] = sect->vertices[0];
-
-                // Read in all neighbors
-                for(i = 0; i < sectVertices; ++i)
-                {
+                    // Get neighbor
                     rc = sscanf(ptr, "%32s%n", word, &n);
                     ptr += n;
-
+                    // Value of 'x' means no neighbor
                     if(word[0] == 'x')
                     {
-                        sect->neighbors[i] = -1;
+                        sect->walls[i].neighbor = -1;
                     }
                     else
                     {
-                        sscanf(word, "%i", &(sect->neighbors[i]));
+                        sscanf(word, "%i", &(sect->walls[i].neighbor));
                     }
-                    
+                    // Get textures
+                    rc = sscanf(ptr, "%hi %hi %hi%n", &sect->walls[i].texture_low,
+                                                   &sect->walls[i].texture_mid, 
+                                                   &sect->walls[i].texture_high,
+                                                   &n);
+                    ptr += n;
+                    //sect->walls[i].texture_low  = TEXTURE_SMOOTHSTONE;
+                    //sect->walls[i].texture_mid  = TEXTURE_RUSTYSHEET;
+                    //sect->walls[i].texture_high = TEXTURE_BRICK;
                 }
                 break;
-            
-            // Player
-            case 'p':
+            case 'p':   // Player
                 // Read in: x y sector
-                sscanf(ptr, "%f %f %i", &_world.player.pos.x, &_world.player.pos.y, &_world.player.sector);
+                sscanf(ptr, "%lf %lf %i", &_world.player.pos.x, &_world.player.pos.y, &_world.player.sector);
                 break;
             default:
                 break;
@@ -361,7 +327,7 @@ int8_t world_load(const char *filename)
 /**
  * Free all memory related to the world
  */
-void world_destroy(void)
+void world_close(void)
 {
     // Free vertex array
     if(_world.vertices) free(_world.vertices);
@@ -405,14 +371,14 @@ void world_move_player(keys_t *keys)
             sect = &_world.sectors[_world.player.sector];
             done = 1;
             // Collision detection
-            for(uint16_t s = 0; s < sect->num_vert; ++s)
+            for(uint16_t s = 0; s < sect->num_walls; ++s)
             {
                 // Get the neighbor of this cell
-                int32_t neighbor = sect->neighbors[s];
+                int32_t neighbor = sect->walls[s].neighbor;
                 sector_t *nsect = (neighbor < 0) ? NULL : &_world.sectors[neighbor];
 
-                xy_t *v0 = &_world.vertices[sect->vertices[s+0]];
-                xy_t *v1 = &_world.vertices[sect->vertices[s+1]];
+                xy_t *v0 = &_world.vertices[sect->walls[s].v0];
+                xy_t *v1 = &_world.vertices[sect->walls[s].v1];
                 dest.x = px+dx; dest.y = py+dy;
                 farDest.x = dest.x + ((dx > 0) ? PLAYER_RADIUS : -PLAYER_RADIUS);
                 farDest.y = dest.y + ((dy > 0) ? PLAYER_RADIUS : -PLAYER_RADIUS);
@@ -425,7 +391,7 @@ void world_move_player(keys_t *keys)
                 {
                     // Compare far line
                     if(lines_intersect(&ppos, &farDest, v0, v1)
-                       && (!inside_sector(&farDest, sect)))
+                       && (!world_inside_sector(&farDest, sect)))
                     {
                         // Player can't fit, project their vector along the wall
                         // TODO this isn't super efficient (that sqrt call
@@ -435,10 +401,11 @@ void world_move_player(keys_t *keys)
                     }
                 }
                 else if(lines_intersect(&ppos, &dest, v0, v1)
-                        && (!inside_sector(&dest, sect)))
+                        && (!world_inside_sector(&dest, sect)))
                 {
                     // Player can fit - update active sector
                     if(prev_sect == neighbor) continue;
+                    if(!world_inside_sector(&dest, &_world.sectors[neighbor])) continue;
                     prev_sect = player->sector;
                     player->sector = neighbor;
                     newsector = 1;
@@ -455,7 +422,7 @@ void world_move_player(keys_t *keys)
             // Check position one last time. If the player is
             // about to escape a sector into space, cancel the move
             dest.x = px+dx; dest.y = py+dy;
-            if(!inside_sector(&dest, sect))
+            if(!world_inside_sector(&dest, sect))
             {
                 dx = 0; dy = 0;
             }
@@ -486,8 +453,6 @@ void world_move_player(keys_t *keys)
         player->pos.z = sect->ceil - player->height - player->headmargin;
         player->velocity.z = 0;
     }
-
-    //print_debug();
 }
 
 /**
@@ -499,6 +464,39 @@ void world_player_update_sector()
     sector_t *sect = &_world.sectors[_world.player.sector];
     // First, check if player is still in their current sector
     
+}
+
+/**
+ * Algorithm to test if a point is inside a sector. 
+ * Draw a line west from the point. If it intersects an odd number
+ * of edges, it is inside the sector. If it intersects an even number
+ * of edges, it is outside the sector.
+ * 
+ * Based on how the Build engine checks if a point is within a sector.
+ * 
+ * @param[in] x The x coordinate
+ * @param[in] y The y coordinate
+ * @param[in] sect The sector
+ */
+int world_inside_sector(xy_t *p, sector_t *sect)
+{
+    float dx, x;
+    uint16_t count = 0;
+    for(int i = 0; i < sect->num_walls; ++i)
+    {
+        // Get the vertices for this edge
+        xy_t *v0 = &_world.vertices[sect->walls[i].v0], *v1 = &_world.vertices[sect->walls[i].v1];
+
+        // Check that vertices contain the right y position
+        if(p->y > MAX(v0->y,v1->y) || p->y <= MIN(v0->y,v1->y)) continue;
+        // Get the x position at this y position
+        dx = (v1->x - v0->x) / (v1->y - v0->y);
+        x  = (v0->x) + (dx * (p->y - v0->y));
+
+        if(x < p->x) ++count;
+    }
+
+    return (count & 0x1) ? 1 : 0;
 }
 
 /**

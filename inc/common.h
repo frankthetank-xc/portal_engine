@@ -45,14 +45,16 @@
     vxs(vxs(x1,y1, x2,y2), (y1)-(y2), vxs(x3,y3, x4,y4), (y3)-(y4)) / vxs((x1)-(x2), (y1)-(y2), (x3)-(x4), (y3)-(y4)) })
 
 // Determine if two floats are equal
-#define FEQ(a,b) (fabs(a - b) < 0.001)
+#define FEQ(a,b) (fabs(a - b) < 1e-3f)
 
-#define PointOnLine(x0, y0, x1, y1, x) (((x)-(x0)) * ((y1)-(y0)) / ((x1)-(x0)) + y0)
+#define PointOnLine(x0, y0, x1, y1, x) ((((x)-(x0)) * ((y1)-(y0)) / ((x1)-(x0))) + y0)
 
 // Get magnitude of a line
-#define LineMagnitude(x,y) (sqrtf( ((x)*(x)) + ((y)*(y)) ) )
+#define LineMagnitude(x,y) (sqrt( ((x)*(x)) + ((y)*(y)) ) )
 
 #define _xy(pt) pt.x, pt.y
+
+#define PI (acos(-1))
 
 /* ***********************************
  * Public Typedefs
@@ -60,15 +62,15 @@
 
 typedef struct xy_struct
 {
-    float x;
-    float y;
+    double x;
+    double y;
 } xy_t;
 
 typedef struct xyz_struct
 {
-    float x;
-    float y;
-    float z;
+    double x;
+    double y;
+    double z;
 } xyz_t;
 
 #endif /*__COMMON_H__*/
