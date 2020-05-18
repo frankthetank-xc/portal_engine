@@ -48,8 +48,6 @@ int main(int argc, char *argv[])
 {
     int done = 0, moving;
     world_t *world;
-    player_t *player;
-    double pi = acos(-1);
     keys_t *keys;
     char *filename;
     int fullscreen = 0;
@@ -89,7 +87,6 @@ int main(int argc, char *argv[])
 
 
     world = world_get_world();
-    player = &world->player;
     lastTick = SDL_GetTicks();
 
     while(done == 0)
@@ -119,7 +116,7 @@ int main(int argc, char *argv[])
         while(curTick - lastTick > TICK_SPAN)
         {
             lastTick += TICK_SPAN;
-            world_move_player(keys);
+            world_tick(keys);
         }
 
         /** Update the screen */

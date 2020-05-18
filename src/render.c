@@ -42,7 +42,7 @@
 #define SKYBOX_H (_skybox.h * VFOV_DEFAULT * 2)
 
 // For use in calculating ceiling/floor
-#define YAW(y,z) (y + z*player->yaw)
+#define YAW(y,z) (y + z*player->player->yaw)
 
 /* ***********************************
  * Private Typedefs
@@ -154,22 +154,22 @@ static int *ybottom = NULL;
  * ***********************************/
 
 // Draw the skybox onto the static pixel buffer
-void render_draw_skybox(player_t *player);
+void render_draw_skybox(mob_t *player);
 
 // Preprocessing step for rendering
 r_wall_t *render_PreProcess(world_t *world);
 
 // Check if wall is in front of another wall
-int render_WallFront(r_wall_t *w1, r_wall_t *w2, player_t *player);
+int render_WallFront(r_wall_t *w1, r_wall_t *w2, mob_t *player);
 
 // Get the the next wall
-r_wall_t *render_GetNextWall(r_wall_t **first, player_t *player);
+r_wall_t *render_GetNextWall(r_wall_t **first, mob_t *player);
 
 // Draw a single wall
 void render_DrawWall(r_wall_t *wall, world_t *world, int *ytop, int *ybottom);
 
 // Go from screen coords to map coords
-void render_screen_to_world(int sX, int sY, double mapY, double pcos, double psin, player_t *player, double *mapX, double *mapZ);
+void render_screen_to_world(int sX, int sY, double mapY, double pcos, double psin, mob_t *player, double *mapX, double *mapZ);
 
 /* ***********************************
  * Static function implementation
@@ -178,11 +178,11 @@ void render_screen_to_world(int sX, int sY, double mapY, double pcos, double psi
 /**
  * Draws the skybox onto the static pixel buffer
  */
-void render_draw_skybox(player_t *player)
+void render_draw_skybox(mob_t *player)
 {
     // Get starting x
     int x0 = _skybox.w - ((player->direction * _skybox.w) / (2 * PI));
-    int y0 = (_skybox.h / 2) + ((player->yaw / MAX_YAW) *  (_skybox.h / 2));
+    int y0 = (_skybox.h / 2) + ((player->player->yaw / MAX_YAW) *  (_skybox.h / 2));
     int x1 = (x0 + SKYBOX_W);
     int y1 = y0 + SKYBOX_H;
 
@@ -365,7 +365,7 @@ r_wall_t *render_PreProcess(world_t *world)
  * Return 1 if w1 is in front of 2, or 0 otherwise.
  * Assumes the screen X coordinates of the lines don't intersect
  */
-int render_WallFront(r_wall_t *w1, r_wall_t *w2, player_t *player)
+int render_WallFront(r_wall_t *w1, r_wall_t *w2, mob_t *player)
 {
     double t1, t2;
     double px, py;
@@ -454,7 +454,7 @@ int render_WallFront(r_wall_t *w1, r_wall_t *w2, player_t *player)
  * interrupted by any other walls.
  * @note Will remove the returned node from the linked list
  */
-r_wall_t *render_GetNextWall(r_wall_t **first, player_t *player)
+r_wall_t *render_GetNextWall(r_wall_t **first, mob_t *player)
 {
     int cnt = 0;
     r_wall_t *next, *compare;
@@ -516,7 +516,7 @@ void render_DrawWall(r_wall_t *wall, world_t *world, int *ytop, int *ybottom)
     int32_t neighbor;
     double yscale0, yscale1, yceil, yfloor, nyceil = 0, nyfloor = 0;
     sector_t *sect, *nbr = NULL;
-    player_t *player;
+    mob_t *player;
     int x0, x1;
     int y0a, y1a, y0b, y1b, ny0a, ny1a, ny0b, ny1b;
     int beginx, endx;
@@ -637,11 +637,11 @@ void render_DrawWall(r_wall_t *wall, world_t *world, int *ytop, int *ybottom)
 /**
  * Convert a screen coordinate to a world one
  */
-void inline render_screen_to_world(int sX, int sY, double mapY, double pcos, double psin, player_t *player, double *mapX, double *mapZ)
+void inline render_screen_to_world(int sX, int sY, double mapY, double pcos, double psin, mob_t *player, double *mapX, double *mapZ)
 {
     double tz, tx;
     if(!mapX || !mapY) return;
-    *mapZ = mapY * _rsettings.vfov / (((SCR_H / 2) - sY) - (player->yaw * _rsettings.vfov));
+    *mapZ = mapY * _rsettings.vfov / (((SCR_H / 2) - sY) - (player->player->yaw * _rsettings.vfov));
     *mapX = (*mapZ) * (sX - (SCR_W / 2)) / (_rsettings.hfov_angle * SCR_H);
 
     tx = (*mapZ) * pcos + (*mapX) * psin;
@@ -1103,7 +1103,7 @@ int8_t render_draw_world(void)
 {
     // Get game world data
     world_t *world = world_get_world();
-    player_t *player = &(world->player);
+    mob_t *player = &(world->player);
 
     //int ytop[SCR_W], ybottom[SCR_W];
     uint32_t i;

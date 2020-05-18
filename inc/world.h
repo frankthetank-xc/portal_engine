@@ -5,6 +5,7 @@
 #ifndef __WORLD_H__
 #define __WORLD_H__
 
+#include "mob.h"
 #include "common.h"
 #include "render.h"
 #include "input.h"
@@ -41,23 +42,13 @@ typedef struct sector_struct
     int16_t texture_floor, texture_ceil;
 } sector_t;
 
-typedef struct player_struct
-{
-    // Current position + velocity vectors
-    xyz_t pos, velocity;
-    // Direction and yaw as angles; height, headmargin, and kneemargin as heightvalues
-    double direction, yaw, height, headmargin, kneemargin;
-    // Current sector as sectorID
-    uint32_t sector;
-} player_t;
-
 typedef struct world_struct
 {
     xy_t     *vertices;
     sector_t *sectors;
     uint32_t numSectors;
 
-    player_t player;
+    mob_t player;
 } world_t;
 
 /* ***********************************
@@ -66,11 +57,16 @@ typedef struct world_struct
 int8_t world_load(const char *filename);
 void world_close(void);
 
-// Player helper functions
-void world_move_player(keys_t *keys);
+// All logic for a single tick
+void world_tick(keys_t *keys);
+
+// Helper functions
 void world_player_update_sector();
 int world_inside_sector(xy_t *p, sector_t *sect);
 
+// Getters
 world_t *world_get_world(void);
+sector_t *world_get_sector(uint32_t id);
+xy_t *world_get_vertex(uint32_t id);
 
 #endif /*__WORLD_H__*/

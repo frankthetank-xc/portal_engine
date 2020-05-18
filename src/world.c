@@ -18,30 +18,12 @@
 #include "render.h"
 #include "util.h"
 #include "input.h"
+#include "player.h"
 
 /* ***********************************
  * Private Definitions
  * ***********************************/
-
 #define BUFLEN 256
-
-#define PLAYER_HEIGHT 6
-#define PLAYER_CROUCH_HEIGHT 2.5
-#define PLAYER_HEAD_MARGIN 1
-#define PLAYER_KNEE_MARGIN 2
-#define PLAYER_RADIUS (0.5)
-
-#define PLAYER_MOVE_VEL 0.1
-#define PLAYER_BACK_VEL 0.1
-#define PLAYER_JUMP_VEL 1.2
-
-#define WALK_MULT (0.4)
-#define SPRINT_MULT (2)
-
-#define MOUSE_X_SCALE (-0.01f)
-#define MOUSE_Y_SCALE (0.03f)
-#define JOY_X_SCALE (-0.07f)
-#define JOY_Y_SCALE (0.15f)
 
 /* ***********************************
  * Private Typedefs
@@ -58,7 +40,6 @@ static world_t _world;
  * ***********************************/
 
 void world_delete_sector(sector_t *sector);
-void world_handle_keys(keys_t *keys);
 
 /* ***********************************
  * Static function implementation
@@ -74,124 +55,6 @@ void world_delete_sector(sector_t *sector)
     if(sector == NULL) { return; }
     if(sector->walls != NULL) { free(sector->walls); }
     return;
-}
-
-/**
- * Handles all movement and logic based on key inputs
- * @param[in] keys The current keystate
- */
-void world_handle_keys(keys_t *keys)
-{
-    double pi = acos(-1);
-    player_t *player = &_world.player;
-    int x, y;
-    float lx, ly, rx, ry;
-
-    input_get_joystick(&lx, &ly, &rx, &ry);
-
-    /** Move the player */
-    if(keys->left)  { player->direction += 0.04; }
-    if(keys->right) { player->direction -= 0.04; }
-    if(player->direction > (2*pi)) player->direction -= 2 * pi;
-    if(player->direction < 0) player->direction += 2 * pi;
-
-    player->velocity.x = 0; player->velocity.y = 0;
-    if(fabs(lx) > 0.1 || fabs(ly) > 0.1)
-    {
-        // Forward/backward
-        if(ly < 0)
-        {
-            player->velocity.x = -(cosf(player->direction) * PLAYER_MOVE_VEL * ly);
-            player->velocity.y = -(sinf(player->direction) * PLAYER_MOVE_VEL * ly);
-        }
-        else
-        {
-            player->velocity.x = -(cosf(player->direction) * PLAYER_BACK_VEL * ly);
-            player->velocity.y = -(sinf(player->direction) * PLAYER_BACK_VEL * ly);
-        }
-        
-        // Left/right
-        player->velocity.x +=  (sinf(player->direction) * PLAYER_MOVE_VEL * lx);
-        player->velocity.y += -(cosf(player->direction) * PLAYER_MOVE_VEL * lx);
-    }
-    else
-    {
-        if(keys->w || keys->up)
-        { 
-            player->velocity.x += (cosf(player->direction) * PLAYER_MOVE_VEL);
-            player->velocity.y += (sinf(player->direction) * PLAYER_MOVE_VEL);
-        }
-        if(keys->s || keys->down)
-        {
-            player->velocity.x += -(cosf(player->direction) * PLAYER_BACK_VEL);
-            player->velocity.y += -(sinf(player->direction) * PLAYER_BACK_VEL);
-        }
-        if(keys->a)
-        { 
-            player->velocity.x += -(sinf(player->direction) * PLAYER_MOVE_VEL);
-            player->velocity.y +=  (cosf(player->direction) * PLAYER_MOVE_VEL);
-        }
-        if(keys->d)
-        {
-            player->velocity.x +=  (sinf(player->direction) * PLAYER_MOVE_VEL);
-            player->velocity.y += -(cosf(player->direction) * PLAYER_MOVE_VEL);
-        }
-    }
-    
-    if(keys->space)
-    {
-        // If player is on the ground, let him JUMP
-        if(FEQ(player->pos.z,_world.sectors[player->sector].floor))
-        {
-            player->velocity.z = 1.2;
-        }
-    }
-
-    // Handle crouching
-    if(keys->c)
-    {
-        if(player->height > PLAYER_CROUCH_HEIGHT)
-        {
-            player->height = MAX(player->height - 0.5, PLAYER_CROUCH_HEIGHT);
-        }
-    }
-    else
-    {
-        if(player->height < PLAYER_HEIGHT)
-        {
-            sector_t *sect = &_world.sectors[player->sector];
-            player->height = MIN(player->height + 0.5, MIN(PLAYER_HEIGHT, sect->ceil - (player->pos.z + player->headmargin)) );
-        }
-    }
-    
-    if(player->height < PLAYER_HEIGHT)
-    {
-        player->velocity.x *= WALK_MULT;
-        player->velocity.y *= WALK_MULT;
-    }
-    if(keys->shift)
-    {
-        player->velocity.x *= SPRINT_MULT;
-        player->velocity.y *= SPRINT_MULT;
-    }
-
-    //if(keys->down) { player->yaw += 0.1; }
-    //if(keys->up) { player->yaw -= 0.1; }
-    //player->yaw = CLAMP(player->yaw, -MAX_YAW, MAX_YAW);
-
-    // Get look info
-    mouse_get_input(&x, &y);
-    if(fabs(rx) > 0.05 || fabs(ry) > 0.05)
-    {
-        player->direction +=  rx * JOY_X_SCALE;
-        player->yaw = CLAMP(player->yaw + ry*JOY_Y_SCALE, -MAX_YAW, MAX_YAW);
-    }
-    else
-    {
-        player->direction += x * MOUSE_X_SCALE;
-        player->yaw = CLAMP(player->yaw + y*MOUSE_Y_SCALE, -MAX_YAW, MAX_YAW);
-    }
-    
 }
 
 /* ***********************************
@@ -235,18 +98,12 @@ int8_t world_load(const char *filename)
     _world.sectors = NULL;
     _world.vertices = NULL;
 
+    mob_init(&_world.player, MOB_TYPE_PLAYER);
+
     // Set default values for player
     _world.player.pos.x = 0;
     _world.player.pos.y = 0;
     _world.player.sector = 0;
-    _world.player.yaw           = 0;
-    _world.player.direction     = 0;
-    _world.player.headmargin    = PLAYER_HEAD_MARGIN;
-    _world.player.height        = PLAYER_HEIGHT;
-    _world.player.kneemargin    = PLAYER_KNEE_MARGIN;
-    _world.player.velocity.x = 0;
-    _world.player.velocity.y = 0;
-    _world.player.velocity.z = 0;
 
     // Read the file
     while(fgets(buf, sizeof(buf), fp))
@@ -344,115 +201,13 @@ void world_close(void)
     return;
 }
 
-/**
- * Handle logic of moving player
- */
-void world_move_player(keys_t *keys)
+void world_tick(keys_t *keys)
 {
-    player_t *player = &_world.player;
-    float px = player->pos.x, py = player->pos.y;
-    int done, newsector = 0;;
-    // Construct vector for player movement
-    float dx = player->velocity.x, dy = player->velocity.y;
-    xy_t dest = {px+dx, py+dy};
-    xy_t farDest;
-    xy_t ppos = {px, py};
-    sector_t *sect;
-    int prev_sect = -1;
-
     // Check user keys
-    world_handle_keys(keys);
+    player_handle_input(&_world.player, keys);
 
-    // Horizontal movement loop
-    if(dx != 0.0 || dy != 0.0)
-    {
-        do
-        {
-            sect = &_world.sectors[_world.player.sector];
-            done = 1;
-            // Collision detection
-            for(uint16_t s = 0; s < sect->num_walls; ++s)
-            {
-                // Get the neighbor of this cell
-                int32_t neighbor = sect->walls[s].neighbor;
-                sector_t *nsect = (neighbor < 0) ? NULL : &_world.sectors[neighbor];
-
-                xy_t *v0 = &_world.vertices[sect->walls[s].v0];
-                xy_t *v1 = &_world.vertices[sect->walls[s].v1];
-                dest.x = px+dx; dest.y = py+dy;
-                farDest.x = dest.x + ((dx > 0) ? PLAYER_RADIUS : -PLAYER_RADIUS);
-                farDest.y = dest.y + ((dy > 0) ? PLAYER_RADIUS : -PLAYER_RADIUS);
-
-                // Check if player is about to cross an edge
-                float hole_low  = neighbor < 0 ?  9e9 : MAX(sect->floor, nsect->floor);
-                float hole_high = neighbor < 0 ? -9e9 : MIN(sect->ceil,  nsect->ceil);
-                if((neighbor < 0) || hole_high < (player->pos.z + player->height + player->headmargin)
-                    || (hole_low > player->pos.z + player->kneemargin))
-                {
-                    // Compare far line
-                    if(lines_intersect(&ppos, &farDest, v0, v1)
-                       && (!world_inside_sector(&farDest, sect)))
-                    {
-                        // Player can't fit, project their vector along the wall
-                        // TODO this isn't super efficient (that sqrt call
-                        // is particularly nasty), but it's called
-                        // rarely enough that it doesn't really matter....
-                        project_vector(dx,dy, (v1->x - v0->x), (v1->y - v0->y), &dx, &dy);
-                    }
-                }
-                else if(lines_intersect(&ppos, &dest, v0, v1)
-                        && (!world_inside_sector(&dest, sect)))
-                {
-                    // Player can fit - update active sector
-                    if(prev_sect == neighbor) continue;
-                    if(!world_inside_sector(&dest, &_world.sectors[neighbor])) continue;
-                    prev_sect = player->sector;
-                    player->sector = neighbor;
-                    newsector = 1;
-                    done = 0;
-                }
-
-            }
-        } while (!done);
-
-        sect = &_world.sectors[_world.player.sector];
-
-        if(!newsector)
-        {
-            // Check position one last time. If the player is
-            // about to escape a sector into space, cancel the move
-            dest.x = px+dx; dest.y = py+dy;
-            if(!world_inside_sector(&dest, sect))
-            {
-                dx = 0; dy = 0;
-            }
-        }
-
-        // Now move the player
-        player->pos.x += dx;
-        player->pos.y += dy;
-    }
-    
-    sect = &_world.sectors[_world.player.sector];
-
-    // Vertical movement
-    if(player->pos.z > sect->floor)
-    {
-        // Add gravity
-        player->velocity.z -= 0.05;
-    }
-    player->pos.z += player->velocity.z;
-
-    if(player->pos.z < sect->floor)
-    {
-        player->pos.z = sect->floor;
-        player->velocity.z = 0;
-    }
-    if(player->pos.z + player->height + player->headmargin > sect->ceil)
-    {
-        player->pos.z = sect->ceil - player->height - player->headmargin;
-        player->velocity.z = 0;
-    }
+    // Update player position
+    mob_pos_update(&_world.player);
 }
 
 /**
@@ -505,4 +260,24 @@ int world_inside_sector(xy_t *p, sector_t *sect)
 world_t *world_get_world(void)
 {
     return &_world;
+}
+
+/**
+ * Returns handle to sector if the ID is valid
+ */
+sector_t *world_get_sector(uint32_t id)
+{
+    if(id < _world.numSectors)
+    {
+        return &_world.sectors[id];
+    }
+}
+
+/**
+ * Returns handle to vertex
+ * @note There is no bounds checking
+ */
+xy_t *world_get_vertex(uint32_t id)
+{
+    return &_world.vertices[id];
 }

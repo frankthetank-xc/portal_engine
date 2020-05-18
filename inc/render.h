@@ -8,6 +8,7 @@
 #include <stdio.h>
 #include <stdint.h>
 #include <SDL.h>
+#include <SDL_render.h>
 
 /* ***********************************
  * Public Definitions
