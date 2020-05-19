@@ -50,16 +50,16 @@ static const mob_conf_t mob_conf_data[MOB_TYPE_NUMBER] =
 {
     // Player
     {
-        .height = PLAYER_HEIGHT,
+        .height     = PLAYER_HEIGHT,
         .kneemargin = PLAYER_KNEE_MARGIN,
-        .eyemargin = PLAYER_HEAD_MARGIN,
+        .eyemargin  = PLAYER_HEAD_MARGIN,
         .max_health = 100,
     },
     // Enemy 1
     {
-        .height = PLAYER_HEIGHT,
+        .height     = PLAYER_HEIGHT - 2,
         .kneemargin = PLAYER_KNEE_MARGIN,
-        .eyemargin = PLAYER_HEAD_MARGIN,
+        .eyemargin  = PLAYER_HEAD_MARGIN,
         .max_health = 100,
     }
 };
@@ -147,7 +147,7 @@ void mob_pos_update(mob_t *mob)
                 float hole_low  = neighbor < 0 ?  9e9 : MAX(sect->floor, nsect->floor);
                 float hole_high = neighbor < 0 ? -9e9 : MIN(sect->ceil,  nsect->ceil);
                 if((neighbor < 0) || hole_high < (mob->pos.z + mob->height + mob->eyemargin)
-                    || (hole_low > mob->pos.z + mob->eyemargin))
+                    || (hole_low > mob->pos.z + mob->kneemargin))
                 {
                     // Compare far line
                     if(lines_intersect(&ppos, &farDest, v0, v1)
@@ -158,6 +158,8 @@ void mob_pos_update(mob_t *mob)
                         // is particularly nasty), but it's called
                         // rarely enough that it doesn't really matter....
                         project_vector(dx,dy, (v1->x - v0->x), (v1->y - v0->y), &dx, &dy);
+                        //s = -1;
+                        //continue;
                     }
                 }
                 else if(lines_intersect(&ppos, &dest, v0, v1)

@@ -34,7 +34,8 @@
 #define PLAYER_BACK_VEL 0.05
 #define PLAYER_JUMP_VEL 1.2
 #define PLAYER_FRICTION (0.7)
-#define PLAYER_AIR_MULT (0.1)
+#define PLAYER_AIR_MULT (0.3)
+#define MAX_SPEED (0.3)
 
 #define WALK_MULT (0.4)
 #define SPRINT_MULT (2)
@@ -166,16 +167,19 @@ void player_handle_input(mob_t *player, keys_t *keys)
     //player->yaw = CLAMP(player->yaw, -MAX_YAW, MAX_YAW);
 
     // Apply velocity to player's vectors ONLY if they're on the ground
-    if(player->pos.z < (sect->floor + 0.5))
+    if(player->pos.z < (sect->floor + 0.5) || 1)
     {
         player->velocity.x = (player->velocity.x * PLAYER_FRICTION) + vel.x;
         player->velocity.y = (player->velocity.y * PLAYER_FRICTION) + vel.y;
     }
     else
     {
-        //player->velocity.x = (player->velocity.x * (1.0 - PLAYER_AIR_MULT)) + (vel.x * PLAYER_AIR_MULT);
-        //player->velocity.y = (player->velocity.y * (1.0 - PLAYER_AIR_MULT)) + (vel.y * PLAYER_AIR_MULT);
+        player->velocity.x = (player->velocity.x * (PLAYER_FRICTION)) + (vel.x * (PLAYER_AIR_MULT));
+        player->velocity.y = (player->velocity.y * (PLAYER_FRICTION)) + (vel.y * (PLAYER_AIR_MULT));
     }
+
+    player->velocity.x = CLAMP(player->velocity.x, -MAX_SPEED, MAX_SPEED);
+    player->velocity.y = CLAMP(player->velocity.y, -MAX_SPEED, MAX_SPEED);
 
     // Get look info
     mouse_get_input(&x, &y);
